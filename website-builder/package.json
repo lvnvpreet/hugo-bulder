@@ -1,0 +1,108 @@
+{
+  "name": "website-builder",
+  "version": "1.0.0",
+  "description": "AI-powered website builder with React, Node.js, Python FastAPI, and Hugo",
+  "main": "index.js",
+  "scripts": {
+    "dev": "docker-compose up -d",
+    "dev:build": "docker-compose up --build -d",
+    "dev:logs": "docker-compose logs -f",
+    "dev:down": "docker-compose down",
+    "dev:clean": "docker-compose down -v --remove-orphans",
+    "prod": "NODE_ENV=production docker-compose up -d",
+    "prod:build": "NODE_ENV=production docker-compose up --build -d",
+    "install:all": "npm run install:frontend && npm run install:backend && npm run install:hugo",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && npm install",
+    "install:hugo": "cd hugo-generator && npm install",
+    "install:ai": "cd ai-engine && pip install -r requirements.txt",
+    "test": "npm run test:frontend && npm run test:backend && npm run test:ai",
+    "test:frontend": "cd frontend && npm run test",
+    "test:backend": "cd backend && npm run test",
+    "test:ai": "cd ai-engine && pytest",
+    "lint": "npm run lint:frontend && npm run lint:backend && npm run lint:hugo",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:hugo": "cd hugo-generator && npm run lint",
+    "lint:fix": "npm run lint:fix:frontend && npm run lint:fix:backend && npm run lint:fix:hugo",
+    "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "lint:fix:backend": "cd backend && npm run lint:fix",
+    "lint:fix:hugo": "cd hugo-generator && npm run lint:fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+    "type-check": "npm run type-check:frontend && npm run type-check:backend && npm run type-check:hugo",
+    "type-check:frontend": "cd frontend && npm run type-check",
+    "type-check:backend": "cd backend && npm run type-check",
+    "type-check:hugo": "cd hugo-generator && npm run type-check",
+    "build": "npm run build:frontend && npm run build:backend && npm run build:hugo",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "build:hugo": "cd hugo-generator && npm run build",
+    "db:setup": "cd backend && npm run db:push && npm run db:seed",
+    "db:reset": "cd backend && npm run db:reset",
+    "db:studio": "cd backend && npm run db:studio",
+    "health-check": "curl -f http://localhost/health && curl -f http://localhost:3001/health && curl -f http://localhost:8000/health && curl -f http://localhost:3003/health",
+    "backup": "docker-compose exec postgres pg_dump -U postgres website_builder > backup_$(date +%Y%m%d_%H%M%S).sql",
+    "restore": "docker-compose exec -T postgres psql -U postgres website_builder",
+    "clean": "npm run clean:node_modules && npm run clean:dist && npm run clean:docker",
+    "clean:node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +",
+    "clean:dist": "find . -name 'dist' -o -name 'build' -type d -prune -exec rm -rf '{}' +",
+    "clean:docker": "docker system prune -f && docker volume prune -f",
+    "setup": "npm run install:all && cp .env.example .env && echo 'Please configure your .env file with API keys and settings'",
+    "precommit": "npm run lint && npm run type-check && npm run test"
+  },
+  "keywords": [
+    "website-builder",
+    "ai",
+    "react",
+    "typescript",
+    "nodejs",
+    "python",
+    "fastapi",
+    "hugo",
+    "docker",
+    "microservices",
+    "langchain",
+    "openai"
+  ],
+  "author": "Website Builder Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/website-builder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/website-builder/issues"
+  },
+  "homepage": "https://github.com/your-username/website-builder#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.1.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "concurrently": "^8.2.2"
+  },
+  "workspaces": [
+    "frontend",
+    "backend",
+    "hugo-generator"
+  ],
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm run type-check && npm run test"
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "git add"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write",
+      "git add"
+    ]
+  }
+}
