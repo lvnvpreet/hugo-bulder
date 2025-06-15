@@ -53,7 +53,7 @@ export const FeaturesSelectionStep: React.FC<FeaturesSelectionStepProps> = ({
   };
 
   const onSubmit = (formData: FeaturesSelection) => {
-    updateData({ featuresSelection: formData });
+    updateData({ featuresSelection: formData } as any);
     onNext();
   };  // Create a flat array of all features for searching
   const allFeatures = [

@@ -1,7 +1,6 @@
 version: '3.8'
 
-services:
-  # Database
+services:  # Database
   postgres:
     image: postgres:15-alpine
     container_name: website-builder-db
@@ -9,11 +8,13 @@ services:
       POSTGRES_DB: ${DB_NAME:-website_builder}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./backend/scripts/docker-init.sql:/docker-entrypoint-initdb.d/02-setup.sql
     networks:
       - website-builder-network
     healthcheck:
@@ -21,7 +22,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+    restart: unless-stopped
   # Backend API (Node.js + Express + TypeScript)
   backend:
     build:
@@ -34,12 +35,14 @@ services:
       PORT: ${BACKEND_PORT:-3001}
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-website_builder}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       AI_ENGINE_URL: http://ai-engine:8000
       HUGO_GENERATOR_URL: http://hugo-generator:3003
     ports:
       - "${BACKEND_PORT:-3001}:3001"
     volumes:
       - ./backend:/app
+      - backend_uploads:/app/uploads
       - /app/node_modules
     depends_on:
       postgres:
@@ -49,6 +52,11 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      sh -c "npm run db:setup && npm run dev"
       interval: 30s
       timeout: 10s
       retries: 3
@@ -163,6 +171,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  backend_uploads:
     driver: local
   ai_cache:
     driver: local

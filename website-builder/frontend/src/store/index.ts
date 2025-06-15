@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { User, Project, ProjectStatus } from '@/types'
+import { User, Project, ProjectStatus } from '../types'
 
 // Auth Store
 interface AuthState {
@@ -464,6 +464,9 @@ export const useGenerationStore = create<GenerationState & GenerationActions>()(
 
     clearHistory: () => {
       set({ history: [] })
-    },
-  })
+    },  })
 )
+
+// Store exports
+export { useWizardStore } from './wizardStore';
+export { useWizardStore as useSimpleWizardStore } from './wizard'; // Legacy compatibility

@@ -29,7 +29,7 @@ export const ContentDetailsStep: React.FC<ContentDetailsStepProps> = ({
     formState: { errors }
   } = useForm<ContentDetails>({
     resolver: zodResolver(contentDetailsSchema),
-    defaultValues: data.contentDetails || {
+    defaultValues: (data as any).contentDetails || {
       companyName: '',
       tagline: '',
       aboutUs: '',
@@ -71,7 +71,7 @@ export const ContentDetailsStep: React.FC<ContentDetailsStepProps> = ({
       ...formData,
       services: formData.services.filter(service => service.trim() !== '')
     };
-    updateData({ contentDetails: cleanedData });
+    updateData({ contentDetails: cleanedData } as any);
     onNext();
   };
 

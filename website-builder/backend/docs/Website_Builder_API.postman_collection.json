@@ -1,0 +1,531 @@
+{
+  "info": {
+    "name": "Website Builder API",
+    "description": "Complete API collection for the AI-powered website builder platform",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "projectId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "generationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"name\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.data.token);",
+                  "    pm.collectionVariables.set('userId', response.data.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "Create Project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('projectId', response.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Awesome Website\",\n  \"description\": \"A professional business website\",\n  \"wizardData\": {\n    \"websiteType\": \"business\",\n    \"businessInfo\": {\n      \"name\": \"Acme Corp\",\n      \"description\": \"We provide excellent services\",\n      \"industry\": \"Technology\",\n      \"location\": \"San Francisco, CA\"\n    },\n    \"designPreferences\": {\n      \"theme\": \"business-pro\",\n      \"colorScheme\": \"blue\",\n      \"layout\": \"modern\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects?page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Project by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Project",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Website Name\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Project",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Website Generation",
+      "item": [
+        {
+          "name": "Start Generation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('generationId', response.data.generationId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hugoTheme\": \"business-pro\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\",\n      \"secondary\": \"#64748b\",\n      \"accent\": \"#f59e0b\"\n    },\n    \"fonts\": {\n      \"heading\": \"Inter\",\n      \"body\": \"Source Sans Pro\"\n    }\n  },\n  \"contentOptions\": {\n    \"aiModel\": \"gpt-4\",\n    \"tone\": \"professional\",\n    \"length\": \"medium\",\n    \"includeSEO\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/generations/{{projectId}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["generations", "{{projectId}}", "start"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Generation Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/generations/{{generationId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["generations", "{{generationId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Generation History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/generations?page=1&pageSize=10&status=COMPLETED",
+              "host": ["{{baseUrl}}"],
+              "path": ["generations"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "COMPLETED"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Generation",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/generations/{{generationId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["generations", "{{generationId}}", "cancel"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Generation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectIds\": [\"{{projectId}}\"],\n  \"hugoTheme\": \"business-pro\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/generations/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["generations", "bulk"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Assets",
+      "item": [
+        {
+          "name": "Upload Asset",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "description",
+                  "value": "Test image upload",
+                  "type": "text"
+                },
+                {
+                  "key": "tags",
+                  "value": "test,image",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/assets/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["assets", "upload"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Assets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/assets?page=1&pageSize=10&type=image",
+              "host": ["{{baseUrl}}"],
+              "path": ["assets"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "type",
+                  "value": "image"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI Services",
+      "item": [
+        {
+          "name": "Generate Content",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"homepage\",\n  \"businessInfo\": {\n    \"name\": \"Acme Corp\",\n    \"description\": \"Professional services company\",\n    \"industry\": \"Technology\"\n  },\n  \"options\": {\n    \"tone\": \"professional\",\n    \"length\": \"medium\",\n    \"includeSEO\": true,\n    \"targetAudience\": \"business professionals\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/generate/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "generate", "content"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Images",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Professional business office space, modern design, clean lighting\",\n  \"style\": \"professional\",\n  \"size\": \"1024x768\",\n  \"count\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/generate/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "generate", "images"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Register Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://your-webhook-endpoint.com/webhook\",\n  \"events\": [\"generation.started\", \"generation.completed\", \"generation.failed\"],\n  \"headers\": {\n    \"X-API-Key\": \"your-api-key\",\n    \"X-Webhook-Source\": \"website-builder\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhooks"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reference Data",
+      "item": [
+        {
+          "name": "Get Business Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/business-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["reference", "business-categories"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Hugo Themes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/hugo-themes?category=business&style=modern",
+              "host": ["{{baseUrl}}"],
+              "path": ["reference", "hugo-themes"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "business"
+                },
+                {
+                  "key": "style",
+                  "value": "modern"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

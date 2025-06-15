@@ -2,7 +2,7 @@ import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios'
 import { toast } from 'sonner'
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api'
 const API_TIMEOUT = 30000 // 30 seconds
 
 // Create axios instance
@@ -22,9 +22,10 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
-    
-    // Add request timestamp
-    config.metadata = { startTime: new Date() }
+      // Add request debugging
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`)
+    }
     
     return config
   },
@@ -35,11 +36,9 @@ apiClient.interceptors.request.use(
 
 // Response interceptor
 apiClient.interceptors.response.use(
-  (response: AxiosResponse) => {
-    // Log response time in development
-    if (import.meta.env.DEV && response.config.metadata) {
-      const duration = new Date().getTime() - response.config.metadata.startTime.getTime()
-      console.log(`API ${response.config.method?.toUpperCase()} ${response.config.url} - ${duration}ms`)
+  (response: AxiosResponse) => {    // Log response in development
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url}`)
     }
     
     return response
@@ -56,7 +55,7 @@ apiClient.interceptors.response.use(
     } else if (error.response?.status === 404) {
       // Not found
       toast.error('Resource not found')
-    } else if (error.response?.status >= 500) {
+    } else if (error.response && error.response.status >= 500) {
       // Server error
       toast.error('Server error. Please try again later.')
     } else if (error.code === 'ECONNABORTED') {

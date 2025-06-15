@@ -1,5 +1,8 @@
 // Core types for the website builder application
 
+// Export wizard types
+export * from './wizard';
+
 export interface User {
   id: string
   email: string
@@ -350,12 +353,14 @@ export interface SimpleWizardData {
   // Features Selection
   selectedFeatures?: string[]
   integrations?: string[]
+  featuresSelection?: any
 
   // Content Details
   companyName?: string
   tagline?: string
   aboutUs?: string
   services?: string[]
+  contentDetails?: any
   contactInfo?: {
     email: string
     phone?: string
@@ -532,3 +537,23 @@ export const availableFeatures = {
 
 // Re-export commonly used types
 export type { ReactNode } from 'react'
+
+// Generation types for API
+export interface GenerationRequest {
+  websiteType: string;
+  businessInfo: BusinessInfo;
+  websiteStructure: WebsiteStructure;
+  designPreferences: DesignPreferences;
+  contentPreferences: ContentPreferences;
+  contactInfo: ContactInfo;
+  seoSettings: SeoSettings;
+  additionalFeatures: AdditionalFeatures;
+}
+
+export interface GenerationStatus {
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  currentStep: string;
+  content?: GeneratedContent;
+  errors?: string[];
+}

@@ -27,7 +27,7 @@ export const GenerationStep: React.FC<GenerationStepProps> = ({
 
   const handleStartGeneration = async () => {
     try {
-      await startGeneration(data);
+      await startGeneration(data as any);
       // On successful completion, proceed to next step
       onNext();
     } catch (err) {

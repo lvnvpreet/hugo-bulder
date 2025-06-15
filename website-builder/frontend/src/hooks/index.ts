@@ -64,7 +64,7 @@ export const useProjects = () => {
     projects.setLoading(true)
     try {
       const response = await projectsAPI.getAll(params)
-      projects.setProjects(response.data)
+      projects.setProjects(response.data || [])
       projects.setPagination(response.pagination)
     } catch (error: any) {
       projects.setError(error.message)
@@ -77,7 +77,7 @@ export const useProjects = () => {
   const createProject = useCallback(async (data: any) => {
     try {
       const project = await projectsAPI.create(data)
-      projects.addProject(project)
+      projects.addProject(project as any)
       toast.success('Project created successfully!')
       return project
     } catch (error: any) {
@@ -89,7 +89,7 @@ export const useProjects = () => {
   const updateProject = useCallback(async (id: string, data: any) => {
     try {
       const project = await projectsAPI.update(id, data)
-      projects.updateProject(id, project)
+      projects.updateProject(id, project as any)
       toast.success('Project updated successfully!')
       return project
     } catch (error: any) {
@@ -126,14 +126,13 @@ export const useGeneration = () => {
     try {
       const generationId = `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       generation.startGeneration(projectId, generationId)
-      
-      // Start the generation process
-      const result = await projectsAPI.generateContent(projectId, wizardData)
+        // Start the generation process
+      await projectsAPI.generateContent(projectId, wizardData)
       
       // Poll for status updates
       const pollStatus = async () => {
         try {
-          const status = await projectsAPI.getGenerationStatus(projectId, generationId)
+          const status = await projectsAPI.getGenerationStatus(projectId, generationId) as any
           
           generation.updateGeneration(generationId, {
             status: status.status,

@@ -1,0 +1,58 @@
+{
+  "projectId": "test-hugo-site-001",
+  "projectData": {
+    "businessInfo": {
+      "name": "TechSolution Pro",
+      "description": "Professional web development and digital solutions",
+      "email": "contact@techsolutionpro.com",
+      "phone": "+1 (555) 123-4567",
+      "address": "123 Tech Street, Digital City, DC 12345"
+    },
+    "brandColors": {
+      "primary": "#2563eb",
+      "secondary": "#f59e0b",
+      "accent": "#10b981"
+    },
+    "socialMedia": {
+      "facebook": "https://facebook.com/techsolutionpro",
+      "twitter": "https://twitter.com/techsolutionpro",
+      "linkedin": "https://linkedin.com/company/techsolutionpro"
+    }
+  },
+  "generatedContent": {
+    "companyName": "TechSolution Pro",
+    "companyDescription": "Professional web development and digital solutions",
+    "services": [
+      {
+        "name": "Web Development", 
+        "description": "Custom websites and web applications built with modern technologies",
+        "features": ["Responsive Design", "SEO Optimized", "Fast Performance"]
+      },
+      {
+        "name": "Digital Marketing",
+        "description": "Comprehensive digital marketing strategies to grow your business", 
+        "features": ["Social Media Management", "Content Marketing", "PPC Advertising"]
+      }
+    ]
+  },
+  "themeConfig": {
+    "id": "papermod",
+    "name": "PaperMod"
+  },
+  "seoData": {
+    "title": "TechSolution Pro - Professional Web Development",
+    "description": "Professional web development and digital solutions",
+    "keywords": ["web development", "digital marketing", "SEO", "responsive design"]
+  },
+  "structure": {
+    "pages": ["home", "about", "services", "contact"],
+    "navigation": {
+      "primary": [
+        {"name": "Home", "url": "/"},
+        {"name": "About", "url": "/about"},
+        {"name": "Services", "url": "/services"},
+        {"name": "Contact", "url": "/contact"}
+      ]
+    }
+  }
+}

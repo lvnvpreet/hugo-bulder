@@ -2,7 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Layout } from '@/components/layout/Layout'
 import { HomePage } from '@/pages/HomePage'
-import { WizardPage } from '@/pages/WizardPage'
+import { WizardPage as NewWizardPage } from '@/pages/WizardPageNew'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -47,12 +47,11 @@ function App() {
               <ProjectsPage />
             </Layout>
           } 
-        />
-        <Route 
+        />        <Route 
           path="/wizard/*" 
           element={
             <Layout>
-              <WizardPage />
+              <NewWizardPage />
             </Layout>
           } 
         />

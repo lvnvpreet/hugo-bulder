@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import api from '@/services/api';
-import type { WizardData, GenerationRequest, GenerationStatus } from '@/types';
+import type { WizardData } from '@/types/wizard';
 
 export interface GenerationState {
   isGenerating: boolean;
@@ -34,9 +33,7 @@ const initialState: GenerationState = {
 export const useGenerationStore = create<GenerationStore>()(
   persist(
     (set, get) => ({
-      ...initialState,
-
-      startGeneration: async (data: WizardData) => {
+      ...initialState,      startGeneration: async (_data: WizardData) => {
         try {
           set({ 
             isGenerating: true, 
@@ -45,55 +42,24 @@ export const useGenerationStore = create<GenerationStore>()(
             error: null 
           });
 
-          // Transform wizard data to generation request
-          const request: GenerationRequest = {
-            projectBasics: data.projectBasics!,
-            designPreferences: data.designPreferences!,
-            featuresSelection: data.featuresSelection!,
-            contentDetails: data.contentDetails!,
-          };
-
-          // Start generation
-          const response = await api.generation.start(request);
+          // Mock generation for now - will be replaced with actual API calls later
+          const generationId = 'mock-gen-' + Date.now();
           
           set({ 
-            generationId: response.generationId,
+            generationId,
             currentStep: 'content',
-            progress: 10 
+            progress: 50 
           });
 
-          // Poll for status updates
-          const pollInterval = setInterval(async () => {
-            try {
-              const status = await api.generation.getStatus(response.generationId);
-              
-              set({
-                progress: status.progress,
-                currentStep: status.currentStep,
-              });
-
-              if (status.status === 'completed') {
-                clearInterval(pollInterval);
-                set({
-                  isGenerating: false,
-                  progress: 100,
-                  result: status.result,
-                });
-              } else if (status.status === 'failed') {
-                clearInterval(pollInterval);
-                set({
-                  isGenerating: false,
-                  error: status.error || 'Generation failed',
-                });
-              }
-            } catch (error) {
-              clearInterval(pollInterval);
-              set({
-                isGenerating: false,
-                error: 'Failed to check generation status',
-              });
-            }
-          }, 2000);
+          // Simulate generation completion after 3 seconds
+          setTimeout(() => {
+            set({
+              isGenerating: false,
+              progress: 100,
+              currentStep: 'completed',
+              result: 'Mock generated content'
+            });
+          }, 3000);
 
         } catch (error: any) {
           set({
@@ -110,37 +76,17 @@ export const useGenerationStore = create<GenerationStore>()(
 
       setError: (error: string) => {
         set({ error, isGenerating: false });
-      },
-
-      checkStatus: async () => {
+      },      checkStatus: async () => {
         const { generationId } = get();
         if (!generationId) return;
 
-        try {
-          const status = await api.generation.getStatus(generationId);
-          set({
-            progress: status.progress,
-            currentStep: status.currentStep,
-            isGenerating: status.status === 'processing',
-          });
-
-          if (status.status === 'completed') {
-            set({
-              result: status.result,
-              isGenerating: false,
-            });
-          } else if (status.status === 'failed') {
-            set({
-              error: status.error || 'Generation failed',
-              isGenerating: false,
-            });
-          }
-        } catch (error: any) {
-          set({
-            error: error.message || 'Failed to check status',
-            isGenerating: false,
-          });
-        }
+        // Mock status check
+        set({
+          progress: 100,
+          currentStep: 'completed',
+          isGenerating: false,
+          result: 'Mock generated content'
+        });
       },
 
       reset: () => {
