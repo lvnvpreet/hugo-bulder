@@ -1,7 +1,7 @@
 {
   "name": "website-builder-hugo-generator",
   "version": "1.0.0",
-  "description": "Hugo static site generator service for the website builder",  
+  "description": "Hugo static site generator service for the website builder",
   "main": "dist/generator.js",
   "scripts": {
     "dev": "tsx watch src/generator.ts",
@@ -19,7 +19,7 @@
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^4.21.2",
     "fs-extra": "^11.2.0",
     "handlebars": "^4.7.8",
     "helmet": "^7.1.0",

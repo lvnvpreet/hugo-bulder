@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   # Frontend Service (React + Vite)
@@ -91,7 +91,6 @@ services:
     build:
       context: ./hugo-generator
       dockerfile: Dockerfile
-      target: production
     container_name: website-builder-hugo-generator
     ports:
       - "3003:3003"
@@ -111,7 +110,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine

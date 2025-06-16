@@ -21,7 +21,7 @@ if (missingEnvVars.length > 0) {
 }
 
 // Port configuration
-const PORT = parseInt(process.env.PORT || '5000', 10);
+const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Server instance
