@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Backend API service for the AI-powered website builder",
   "main": "dist/server.js",
-  "type": "module",
-  "scripts": {
+  "type": "module",  "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:debug": "tsx watch --inspect=0.0.0.0:9229 src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts",

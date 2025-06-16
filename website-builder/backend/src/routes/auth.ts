@@ -215,7 +215,7 @@ router.post(
 // POST /auth/forgot-password - Request password reset
 router.post(
   '/forgot-password',
-  validate(authSchemas.forgotPassword),
+  validate(authSchemas.resetPasswordRequest),
   asyncHandler(async (req: Request, res: Response) => {
     await authService.requestPasswordReset(req.body.email);
 

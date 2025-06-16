@@ -761,12 +761,10 @@ router.delete(
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] || 'unknown',
       },
-    });
-  })
+    });  })
 );
 
-// GET /assets/:id/download - Download asset file
-/**
+/*
  * @swagger
  * /api/assets/{id}/download:
  *   get:
@@ -799,7 +797,7 @@ router.delete(
  *             schema:
  *               type: integer
  *         content:
- *           '*/*':
+ *           
  *             schema:
  *               type: string
  *               format: binary
@@ -865,7 +863,7 @@ router.get(
 );
 
 // GET /assets/:id/serve - Serve asset file (for direct viewing)
-/**
+/*
  * @swagger
  * /api/assets/{id}/serve:
  *   get:
@@ -897,13 +895,12 @@ router.get(
  *             description: Cache control header
  *             schema:
  *               type: string
- *               example: 'public, max-age=31536000'
- *           X-Alt-Text:
+ *               example: 'public, max-age=31536000' *           X-Alt-Text:
  *             description: Alt text for images (if available)
  *             schema:
  *               type: string
  *         content:
- *           '*/*':
+ *         
  *             schema:
  *               type: string
  *               format: binary

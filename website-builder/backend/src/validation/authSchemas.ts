@@ -161,6 +161,15 @@ export const twoFactorSetupSchema = Joi.object({
   }),
 }).strict();
 
+// Add this logout schema (it's missing!)
+export const logoutSchema = Joi.object({
+  refreshToken: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'Refresh token is required',
+    }),
+}).strict();
+
 // Validation helper functions
 export const validateEmail = (email: string): { valid: boolean; error?: string } => {
   const { error } = emailSchema.validate(email);
@@ -220,3 +229,23 @@ export const createValidationMiddleware = (schema: Joi.ObjectSchema) => {
     next();
   };
 };
+
+
+
+
+// Add this at the very end of the file
+export const authSchemas = {
+  register: registerSchema,
+  login: loginSchema,
+  verifyEmail: verifyEmailSchema,
+  resetPasswordRequest: passwordResetRequestSchema,
+  resetPassword: passwordResetSchema,
+  logout: logoutSchema,
+  updateProfile: updateProfileSchema,
+  refreshToken: refreshTokenSchema,
+  changePassword: changePasswordSchema,
+  resendVerification: resendVerificationSchema,
+  deleteAccount: deleteAccountSchema
+};
+
+export default authSchemas;

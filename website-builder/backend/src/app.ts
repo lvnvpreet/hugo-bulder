@@ -139,7 +139,7 @@ app.use(globalRateLimit);
 const speedLimiter = slowDown({
   windowMs: 15 * 60 * 1000, // 15 minutes
   delayAfter: 500, // Allow 500 requests per windowMs without delay
-  delayMs: 50, // Add 50ms delay per request after delayAfter
+  delayMs: () => 50, // ← Changed to function that returns 50ms
   maxDelayMs: 2000, // Maximum delay of 2 seconds
 });
 
