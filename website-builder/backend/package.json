@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Backend API service for the AI-powered website builder",
   "main": "dist/server.js",
-  "type": "module",
-  "scripts": {
+  "type": "module",  "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:debug": "tsx watch --inspect=0.0.0.0:9229 src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts",
@@ -33,10 +33,10 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
-    "archiver": "^7.0.1",
-    "axios": "^1.10.0",
+    "archiver": "^7.0.1",    "axios": "^1.10.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
+    "bull": "^4.12.2",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -60,10 +60,10 @@
     "uuid": "^11.1.0",
     "yaml": "^2.8.0",
     "zod": "^3.22.4"
-  },
-  "devDependencies": {
+  },  "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.6",
+    "@types/bull": "^4.10.0",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",

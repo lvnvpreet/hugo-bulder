@@ -1,0 +1,35 @@
+# Development Dockerfile for Website Builder Backend
+FROM node:18-alpine AS development
+
+# Install system dependencies needed for native modules and Sharp
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    vips-dev \
+    libc6-compat
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies (including dev dependencies)
+RUN npm ci
+
+# Copy Prisma schema
+COPY prisma ./prisma/
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create necessary directories
+RUN mkdir -p logs temp-generation generated-sites uploads/temp uploads/images uploads/documents uploads/videos uploads/audio uploads/thumbnails uploads/webp
+
+# Expose ports for development server and debugging
+EXPOSE 3001
+EXPOSE 9229
+
+# Development command with debugging enabled
+CMD ["npm", "run", "dev"]

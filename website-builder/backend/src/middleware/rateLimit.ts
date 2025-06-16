@@ -156,9 +156,9 @@ export const createSpeedLimiter = (config: {
   return slowDown({
     windowMs: config.windowMs,
     delayAfter: config.delayAfter,
-    delayMs: config.delayMs,
+    delayMs: () => config.delayMs,
     maxDelayMs: config.maxDelayMs,
-    headers: true,
+    // headers: true,
   });
 };
 

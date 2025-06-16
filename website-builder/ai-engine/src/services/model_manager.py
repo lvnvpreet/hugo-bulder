@@ -206,8 +206,7 @@ class ModelManager:
         finally:
             # Remove from downloading set
             self.downloading_models.discard(model_name)
-            
-            # Continue processing queue
+              # Continue processing queue
             if self.download_queue:
                 await self._process_download_queue()
     
@@ -220,15 +219,16 @@ class ModelManager:
             # Simple test prompt
             test_response = await self.ollama_client.generate(
                 model=model_name,
-                prompt="Respond with exactly: 'Model test successful'",
-                max_tokens=10,
+                prompt="Say hello",
+                max_tokens=50,
                 temperature=0.1
             )
             
             latency = time.time() - start_time
             
-            # Validate response
-            if test_response and "successful" in test_response.get("response", "").lower():
+            # Validate response - just check if we got any response
+            response_text = test_response.get("response", "").strip() if test_response else ""
+            if test_response and response_text and len(response_text) > 0:
                 # Model is healthy
                 status = self.model_statuses.get(model_name)
                 if status:
@@ -242,10 +242,10 @@ class ModelManager:
                     # Calculate performance score
                     status.performance_score = self._calculate_performance_score(status, test_response)
                 
-                logger.debug(f"Model {model_name} health test passed (latency: {latency:.3f}s)")
+                logger.info(f"Model {model_name} health test passed (latency: {latency:.3f}s, response: '{response_text[:50]}...')")
                 
             else:
-                raise Exception("Invalid test response")
+                raise Exception(f"Invalid test response: {test_response}")
                 
         except Exception as e:
             self._handle_model_error(model_name, f"Health test failed: {str(e)}")

@@ -6,45 +6,43 @@ Defines available models and their recommended use cases
 from typing import Dict, Any, List
 
 # Model configuration with recommended models for different tasks
-MODELS_CONFIG = {
-    "content_generation": {
-        "primary": "llama3.1:8b",
-        "fallback": "mistral:7b",
+MODELS_CONFIG = {    "content_generation": {
+        "primary": "qwen3:30b-a3b-fp16",
+        "fallback": "qwen2.5-coder:32b",
         "description": "Best for content creation and writing",
         "recommended_temperature": 0.8,
         "max_tokens": 2000,
     },
     "code_generation": {
-        "primary": "codellama:13b",
-        "fallback": "llama3.1:8b", 
+        "primary": "qwen2.5-coder:32b",
+        "fallback": "deepseek-coder-v2:latest", 
         "description": "Optimized for code and technical content",
         "recommended_temperature": 0.3,
         "max_tokens": 4000,
     },
     "structured_data": {
-        "primary": "mistral:7b",
-        "fallback": "llama3.1:8b",
+        "primary": "mistral:7b-instruct",
+        "fallback": "codestral:latest",
         "description": "Good for JSON and structured output",
         "recommended_temperature": 0.2,
         "max_tokens": 1500,
-    },
-    "creative_writing": {
-        "primary": "llama3.1:8b",
-        "fallback": "mistral:7b",
+    },    "creative_writing": {
+        "primary": "qwen3:30b-a3b-fp16",
+        "fallback": "qwen2.5-coder:32b",
         "description": "Creative and engaging content",
         "recommended_temperature": 0.9,
         "max_tokens": 3000,
     },
     "analysis": {
-        "primary": "llama3.1:8b",
-        "fallback": "mistral:7b",
+        "primary": "qwen2.5-coder:32b",
+        "fallback": "codestral:latest",
         "description": "Analysis and reasoning tasks",
         "recommended_temperature": 0.3,
         "max_tokens": 2000,
     },
     "seo_optimization": {
-        "primary": "mistral:7b",
-        "fallback": "llama3.1:8b",
+        "primary": "mistral:7b-instruct",
+        "fallback": "codestral:latest",
         "description": "SEO metadata and optimization",
         "recommended_temperature": 0.4,
         "max_tokens": 1000,
@@ -53,54 +51,81 @@ MODELS_CONFIG = {
 
 # Essential models that should be downloaded on startup
 ESSENTIAL_MODELS = [
-    "llama3.1:8b",
-    "mistral:7b",
+    "qwen3:30b-a3b-fp16",
+    "qwen2.5-coder:32b",
+    "deepseek-coder-v2:latest",
+    "codestral:latest",
+    "mistral:7b-instruct",
 ]
 
 # Optional models that can be downloaded on demand
 OPTIONAL_MODELS = [
-    "codellama:13b",
-    "llama3.1:70b",  # For high-quality content when resources allow
-    "phi3:mini",     # Lightweight option
+    "qwen3:30b-a3b-fp16",
+    "codellama:34b",
+    "qwen2.5-coder:7b",
+    "gemma2:27b-instruct-fp16",
 ]
 
 # Model aliases for backward compatibility
 MODEL_ALIASES = {
-    "llama3:8b": "llama3.1:8b",
-    "llama3": "llama3.1:8b",
-    "mistral": "mistral:7b",
-    "codellama": "codellama:13b",
+    "llama3:8b": "qwen3:30b-a3b-fp16",
+    "llama3": "qwen3:30b-a3b-fp16",
+    "mistral": "mistral:7b-instruct",
+    "codellama": "deepseek-coder-v2:latest",
+    "default": "qwen3:30b-a3b-fp16",
+    "qwen3": "qwen3:30b-a3b-fp16",
 }
 
 # Model specifications and requirements
 MODEL_SPECS = {
-    "llama3.1:8b": {
-        "size_gb": 4.7,
-        "params": "8B",
-        "context_length": 128000,
-        "recommended_ram_gb": 8,
-        "good_for": ["general", "content", "analysis", "creative"],
-    },
-    "mistral:7b": {
-        "size_gb": 4.1,
-        "params": "7B", 
+    "qwen3:30b-a3b-fp16": {
+        "size_gb": 16.8,
+        "params": "30B",
         "context_length": 32768,
-        "recommended_ram_gb": 6,
-        "good_for": ["structured", "seo", "concise"],
+        "recommended_ram_gb": 22,
+        "good_for": ["content", "creative", "writing", "general", "high-quality"],
     },
-    "codellama:13b": {
-        "size_gb": 7.4,
-        "params": "13B",
+    "qwen2.5-coder:32b": {
+        "size_gb": 18.0,
+        "params": "32B",
+        "context_length": 32768,
+        "recommended_ram_gb": 24,
+        "good_for": ["general", "content", "analysis", "creative", "coding"],
+    },
+    "deepseek-coder-v2:latest": {
+        "size_gb": 8.9,
+        "params": "16B", 
         "context_length": 16384,
-        "recommended_ram_gb": 12,
-        "good_for": ["code", "technical", "programming"],
+        "recommended_ram_gb": 16,
+        "good_for": ["code", "technical", "programming", "structured"],
     },
-    "phi3:mini": {
-        "size_gb": 2.2,
-        "params": "3.8B",
-        "context_length": 128000,
-        "recommended_ram_gb": 4,
-        "good_for": ["lightweight", "quick", "basic"],
+    "codestral:latest": {
+        "size_gb": 12.6,
+        "params": "22B",
+        "context_length": 32768,
+        "recommended_ram_gb": 20,
+        "good_for": ["code", "technical", "analysis", "structured"],
+    },
+    "mistral:7b-instruct": {
+        "size_gb": 4.1,
+        "params": "7B",
+        "context_length": 32768,
+        "recommended_ram_gb": 8,
+        "good_for": ["structured", "seo", "concise", "instruct"],
+    },
+    "codellama:34b": {
+        "size_gb": 19.0,
+        "params": "34B",
+        "context_length": 16384,
+        "recommended_ram_gb": 28,
+        "good_for": ["code", "technical", "large-context"],
+    },
+    "nomic-embed-text:latest": {
+        "size_gb": 0.3,
+        "params": "137M",
+        "context_length": 8192,
+        "recommended_ram_gb": 2,
+        "good_for": ["embeddings", "semantic", "lightweight"],
     },
 }
 
@@ -169,11 +194,14 @@ def estimate_memory_requirements(models: List[str]) -> Dict[str, Any]:
 
 # Model download priority (higher number = higher priority)
 MODEL_PRIORITY = {
-    "llama3.1:8b": 100,
-    "mistral:7b": 90,
-    "codellama:13b": 70,
-    "phi3:mini": 60,
-    "llama3.1:70b": 30,
+    "qwen3:30b-a3b-fp16": 105,
+    "qwen2.5-coder:32b": 100,
+    "deepseek-coder-v2:latest": 95,
+    "codestral:latest": 90,
+    "mistral:7b-instruct": 85,
+    "codellama:34b": 70,
+    "nomic-embed-text:latest": 60,
+    "qwen2.5-coder:7b": 50,
 }
 
 def get_download_order(models: List[str]) -> List[str]:

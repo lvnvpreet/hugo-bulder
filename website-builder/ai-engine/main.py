@@ -54,14 +54,19 @@ model_manager: ModelManager = None
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     global ollama_client, model_manager
-    
-    # Startup
+      # Startup
     logger.info("Starting AI Engine...")
     
     try:
-        # Initialize Ollama client
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        # Initialize Ollama client with environment variable
+        ollama_base_url = os.getenv("OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+        logger.info(f"Initializing Ollama client with URL: {ollama_base_url}")
+        
         ollama_client = OllamaClient(base_url=ollama_base_url)
+        
+        # Test connection with detailed diagnostics
+        connection_test = await ollama_client.test_connection()
+        logger.info("Ollama connection test results", **connection_test)
         
         # Initialize model manager
         model_manager = ModelManager(ollama_client)
@@ -69,6 +74,10 @@ async def lifespan(app: FastAPI):
         # Check Ollama connection
         if await ollama_client.health_check():
             logger.info("Ollama connection established")
+            
+            # List available models
+            models = await ollama_client.list_models()
+            logger.info(f"Found {len(models)} available models: {models[:5]}")
             
             # Initialize models in background
             try:
