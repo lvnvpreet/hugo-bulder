@@ -22,16 +22,14 @@ class OllamaClient:
         # Use environment variable or default to localhost
         if base_url is None:
             base_url = os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434"
-          # Ensure URL has protocol
+        
+        # Ensure URL has protocol
         if not base_url.startswith(('http://', 'https://')):
             base_url = f"http://{base_url}"
             
         self.base_url = base_url.rstrip('/')
-        
-        # Get timeout from environment or use default
-        timeout_seconds = float(os.getenv("OLLAMA_TIMEOUT", "600"))
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx.Timeout(300.0),
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=5)
         )
         self.available_models = []

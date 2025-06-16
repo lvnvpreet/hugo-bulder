@@ -326,3 +326,51 @@ async def initialize_models(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model initialization failed: {str(e)}")
+
+@router.get("/test-connection")
+async def test_ollama_connection(
+    ollama_client: OllamaClient = Depends(get_ollama_client)
+):
+    """Test Ollama connection with detailed diagnostics"""
+    
+    if not ollama_client:
+        return {
+            "error": "Ollama client not initialized",
+            "suggestions": [
+                "Check if AI engine started properly",
+                "Verify OLLAMA_HOST environment variable"
+            ]
+        }
+    
+    try:
+        # Run connection test
+        connection_test = await ollama_client.test_connection()
+        
+        # Add environment info
+        connection_test["environment"] = {
+            "OLLAMA_HOST": os.getenv("OLLAMA_HOST", "not set"),
+            "OLLAMA_BASE_URL": os.getenv("OLLAMA_BASE_URL", "not set"),
+            "configured_url": ollama_client.base_url
+        }
+        
+        # Add suggestions based on results
+        if not connection_test["connected"]:
+            connection_test["suggestions"] = [
+                "Check if Ollama is running: 'ollama serve'",
+                "Verify the URL is correct",
+                "Check firewall settings",
+                "Ensure Ollama is listening on the correct port"
+            ]
+        
+        return connection_test
+        
+    except Exception as e:
+        return {
+            "error": str(e),
+            "base_url": ollama_client.base_url,
+            "suggestions": [
+                "Check if Ollama service is running",
+                "Verify network connectivity",
+                "Check environment variables"
+            ]
+        }

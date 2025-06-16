@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3001
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: development
+    ports:
+      - "3001:3001"
+      - "9229:9229"  # Debug port
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://website_builder:dev_password@postgres:5432/website_builder
+      - JWT_SECRET=dev_jwt_secret_change_in_production
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - backend_uploads:/app/uploads
+    command: npm run dev:debug
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app-network
+
+  ai-engine:
+    build:
+      context: ./ai-engine
+      dockerfile: Dockerfile.dev
+      target: development
+    ports:
+      - "3002:3002"
+      - "5678:5678"  # Python debug port
+    environment:
+      - PYTHONPATH=/app
+      - OLLAMA_HOST=http://ollama:11434
+      - LOG_LEVEL=debug
+    volumes:
+      - ./ai-engine:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 3002 --reload
+    depends_on:
+      - ollama
+    networks:
+      - app-network
+
+  hugo-generator:
+    build:
+      context: ./hugo-generator
+      dockerfile: Dockerfile.dev
+      target: development
+    ports:
+      - "3003:3003"  
+      - "9230:9230"  # Debug port
+    volumes:
+      - ./hugo-generator:/app
+      - /app/node_modules
+      - hugo_output:/app/output
+      - hugo_packages:/app/packages
+    command: npm run dev:debug
+    networks:
+      - app-network
+
+  # Override for development
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=website_builder
+      - POSTGRES_PASSWORD=dev_password
+      - POSTGRES_DB=website_builder
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  backend_uploads:
+  hugo_output:
+  hugo_packages:
+
+networks:
+  app-network:
+    driver: bridge
