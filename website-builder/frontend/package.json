@@ -3,18 +3,20 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "AI-powered website builder frontend with React + TypeScript + Vite",
-  "scripts": {
-    "dev": "vite --host 0.0.0.0",
+  "description": "AI-powered website builder frontend with React + TypeScript + Vite",  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev:local": "vite --host localhost --port 3000",
     "build": "tsc && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --port 4173",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "type-check": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "test:connection": "node -e \"import('./src/test/connection-test.js')\"",
+    "diagnostics": "node -e \"console.log('Frontend Config Test'); console.log('API_URL:', process.env.VITE_API_URL); console.log('NODE_ENV:', process.env.NODE_ENV);\""
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

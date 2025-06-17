@@ -1,16 +1,24 @@
 import { Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Layout } from '@/components/layout/Layout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { HomePage } from '@/pages/HomePage'
 import { WizardPage as NewWizardPage } from '@/pages/WizardPageNew'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { LoginPage } from '@/pages/LoginPage'
+import { RegisterPage } from '@/pages/RegisterPage'
+import DiagnosticsPage from '@/pages/DiagnosticsPage'
 import { useTheme } from '@/hooks'
+import { useAuthInit } from '@/hooks/useAuthInit'
 import { useEffect } from 'react'
 
 function App() {
   const { theme } = useTheme()
+  
+  // Initialize authentication state
+  useAuthInit()
 
   // Apply theme on mount and when theme changes
   useEffect(() => {
@@ -32,35 +40,50 @@ function App() {
   }, [theme])
 
   return (
-    <>
-      <Routes>
+    <>      <Routes>
         {/* Public routes */}
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<div>Login Page</div>} />
-        <Route path="/register" element={<div>Register Page</div>} />
-        
-        {/* Protected routes with layout */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+          {/* Protected routes with layout */}
         <Route 
           path="/projects" 
           element={
-            <Layout>
-              <ProjectsPage />
-            </Layout>
+            <ProtectedRoute>
+              <Layout>
+                <ProjectsPage />
+              </Layout>
+            </ProtectedRoute>
           } 
         />        <Route 
           path="/wizard/*" 
           element={
-            <Layout>
-              <NewWizardPage />
-            </Layout>
+            <ProtectedRoute>
+              <Layout>
+                <NewWizardPage />
+              </Layout>
+            </ProtectedRoute>
           } 
-        />
-        <Route 
+        />        <Route 
           path="/settings" 
           element={
-            <Layout>
-              <SettingsPage />
-            </Layout>
+            <ProtectedRoute>
+              <Layout>
+                <SettingsPage />
+              </Layout>
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Development/Debug routes */}
+        <Route 
+          path="/diagnostics" 
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <DiagnosticsPage />
+              </Layout>
+            </ProtectedRoute>
           } 
         />
         

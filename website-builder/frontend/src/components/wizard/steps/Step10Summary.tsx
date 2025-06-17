@@ -1,11 +1,20 @@
 import { useState } from 'react';
-import { CheckCircleIcon, PlayIcon, DocumentIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, PlayIcon, DocumentIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { useWizardStore } from '../../../store/wizardStore';
+import { toast } from 'sonner';
+import { projectsAPI } from '../../../services/api';
 
 export default function Step10Summary() {
   const { data, setGenerationComplete, clearData, isGenerationComplete } = useWizardStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  
+  // New state variables for real API integration
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number>(0);
+  const [currentStep, setCurrentStep] = useState<string>('');
+  const [generationResult, setGenerationResult] = useState<any>(null);
+  const [generationId, setGenerationId] = useState<string | null>(null);
 
   // Generate a summary of all wizard data
   const getWizardSummary = () => {
@@ -87,19 +96,117 @@ export default function Step10Summary() {
     }
 
     return summary;
-  };  const handleGenerateWebsite = async () => {
+  };  const handleGenerateWebsite = async (retryCount = 0) => {
+    const MAX_RETRIES = 3;
     setIsGenerating(true);
+    setError(null);
+    setProgress(0);
+    setCurrentStep('Initializing...');
     
     try {
-      // Simulate website generation process
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      setGenerationComplete(true);
-    } catch (error) {
+      // STEP 1: Project Creation
+      setCurrentStep('Creating project...');
+      setProgress(10);
+      
+      // Create a new project
+      const projectResponse = await projectsAPI.create({
+        name: data.businessInfo?.name || 'Generated Website',
+        description: data.businessInfo?.description || data.businessDescription?.description || '',
+        wizardData: data,
+        type: data.websiteType?.category || 'business'
+      });
+      
+      const projectId = (projectResponse as any).id || (projectResponse as any).data?.id;
+      
+      setProgress(25);
+      setCurrentStep('Project created successfully');
+      
+      // STEP 2: Start Generation
+      setCurrentStep('Starting content generation...');
+      setProgress(30);
+      
+      const generationResponse = await projectsAPI.generateContent(projectId, {
+        wizardData: data,
+        options: {
+          hugoTheme: data.themeConfig?.hugoTheme || 'business-pro',
+          customizations: {
+            colors: data.themeConfig?.colorScheme,
+            typography: data.themeConfig?.typography
+          }
+        }
+      });
+      
+      const newGenerationId = (generationResponse as any).generationId || (generationResponse as any).data?.generationId;
+      setGenerationId(newGenerationId);
+      setProgress(40);
+      setCurrentStep('Generation started, processing content...');
+      
+      // STEP 3: Status Polling
+      const pollStatus = async () => {
+        try {          const statusResponse = await projectsAPI.getGenerationStatus(newGenerationId);
+          const status = (statusResponse as any).data || statusResponse;
+          
+          // Update UI progress
+          setProgress(status.progress || 40);
+          setCurrentStep(status.currentStep || 'Processing...');
+          
+          // Handle different status states
+          if (status.status === 'COMPLETED') {
+            // Success: store results and complete
+            setGenerationResult({
+              previewUrl: status.previewUrl,
+              downloadUrl: status.downloadUrl,
+              content: status.content
+            });
+            setProgress(100);
+            setCurrentStep('Website generation completed!');
+            setGenerationComplete(true);
+            toast.success('Website generated successfully!');
+          } else if (status.status === 'FAILED') {
+            // Error: throw exception
+            throw new Error(status.error || 'Generation failed');
+          } else {
+            // Still processing: continue polling
+            setTimeout(pollStatus, 2000);
+          }
+        } catch (error: any) {
+          console.error('Polling error:', error);
+          throw error;
+        }
+      };
+      
+      // Start polling
+      setTimeout(pollStatus, 2000);
+      
+    } catch (error: any) {
       console.error('Generation failed:', error);
-    } finally {
+      setError(error.message || 'An unexpected error occurred');
+      
+      // Retry logic for network errors
+      if (retryCount < MAX_RETRIES && isRetryableError(error)) {
+        toast.error(`Generation failed, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+        setTimeout(() => handleGenerateWebsite(retryCount + 1), 2000 * (retryCount + 1));
+        return;
+      }
+      
+      // Final failure
+      toast.error('Generation failed: ' + error.message);
       setIsGenerating(false);
     }
-  };  const handleStartOver = () => {
+  };
+  
+  // Helper function to determine if error is retryable
+  const isRetryableError = (error: any) => {
+    return error.code === 'ECONNREFUSED' || 
+           error.code === 'ENOTFOUND' || 
+           error.code === 'ECONNABORTED' ||
+           (error.response && error.response.status >= 500);
+  };
+  
+  // Wrapper for button click
+  const handleGenerateClick = () => {
+    handleGenerateWebsite(0);
+  };const handleStartOver = () => {
     // Reset the wizard data and go back to step 1
     clearData();
   };
@@ -201,6 +308,41 @@ export default function Step10Summary() {
             )}
           </div>
 
+          {/* Generation Progress */}
+          {isGenerating && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+                <div className="flex-1">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">{currentStep}</p>
+                  <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mt-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{progress}% complete</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <ExclamationTriangleIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+                <p className="text-red-800 dark:text-red-200">{error}</p>
+              </div>
+              <button 
+                onClick={handleGenerateClick} 
+                className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Retry Generation
+              </button>
+            </div>
+          )}
+
           {/* Generation Options */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
             <div className="flex items-start space-x-4">
@@ -215,9 +357,8 @@ export default function Step10Summary() {
                   We'll create a complete Hugo website with your chosen theme, content, and configuration. 
                   The generated site will include all necessary files and can be deployed immediately.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    onClick={handleGenerateWebsite}
+                <div className="flex flex-col sm:flex-row gap-3">                  <button
+                    onClick={handleGenerateClick}
                     disabled={isGenerating}
                     className="flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
                   >
@@ -273,8 +414,16 @@ export default function Step10Summary() {
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Download your complete Hugo website source code and assets.
-                </p>
-                <button className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                </p>                <button 
+                  onClick={() => {
+                    if (generationResult?.downloadUrl) {
+                      window.open(generationResult.downloadUrl, '_blank');
+                    } else {
+                      toast.error('Download URL not available');
+                    }
+                  }}
+                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                >
                   Download ZIP
                 </button>
               </div>
@@ -288,8 +437,16 @@ export default function Step10Summary() {
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   View your website in a new tab to see how it looks.
-                </p>
-                <button className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors">
+                </p>                <button 
+                  onClick={() => {
+                    if (generationResult?.previewUrl) {
+                      window.open(generationResult.previewUrl, '_blank');
+                    } else {
+                      toast.error('Preview URL not available');
+                    }
+                  }}
+                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
+                >
                   Open Preview
                 </button>
               </div>

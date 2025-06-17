@@ -3,6 +3,9 @@ import { useAuthStore, useProjectsStore, useUIStore, useGenerationStore } from '
 import { authAPI, projectsAPI, aiAPI } from '@/services/api'
 import { toast } from 'sonner'
 
+// Export auth initialization hook
+export { useAuthInit } from './useAuthInit'
+
 // Authentication hooks
 export const useAuth = () => {
   const auth = useAuthStore()
@@ -132,7 +135,7 @@ export const useGeneration = () => {
       // Poll for status updates
       const pollStatus = async () => {
         try {
-          const status = await projectsAPI.getGenerationStatus(projectId, generationId) as any
+          const status = await projectsAPI.getGenerationStatus(generationId) as any
           
           generation.updateGeneration(generationId, {
             status: status.status,

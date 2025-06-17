@@ -54,28 +54,44 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration
+// CORS configuration with enhanced local development support
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
     const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
       'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:4173'
+      'http://localhost:5173', // Vite default dev server
+      'http://localhost:4173', // Vite preview server
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:4173'
     ];
     
-    // Allow requests with no origin (mobile apps, etc.)
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS: Allowing origin ${origin}`);
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.warn(`❌ CORS: Blocking origin ${origin}`);
+      console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+      callback(new Error(`CORS policy violation: Origin ${origin} is not allowed`));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  maxAge: 86400 // 24 hours
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'X-Request-ID',
+    'Accept',
+    'Origin',
+    'Cache-Control'
+  ],
+  exposedHeaders: ['X-Request-ID', 'X-Total-Count'],
+  maxAge: 86400, // 24 hours preflight cache
+  optionsSuccessStatus: 200 // For legacy browser support
 };
 
 app.use(cors(corsOptions));
@@ -175,52 +191,41 @@ const upload = multer({
 });
 
 // Health check endpoint
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: Health check endpoint
- *     description: Returns the health status of the API server
- *     tags: [System]
- *     security: []
- *     responses:
- *       200:
- *         description: Server is healthy
- *         content:
- *           application/json:
- *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/ApiResponse'
- *                 - type: object
- *                   properties:
- *                     data:
- *                       type: object
- *                       properties:
- *                         status:
- *                           type: string
- *                           example: healthy
- *                         timestamp:
- *                           type: string
- *                           format: date-time
- *                         uptime:
- *                           type: number
- *                           description: Server uptime in seconds
- *                         environment:
- *                           type: string
- *                           example: development
- *                         version:
- *                           type: string
- *                           example: 1.0.0
- */
 app.get('/health', (req, res) => {
-  res.json({
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV,
+    version: process.env.npm_package_version || '1.0.0',
+    services: {
+      database: 'connected', // You can add actual DB health check here
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'
+      }
+    }
+  });
+});
+
+// Service status endpoint for frontend monitoring
+app.get('/api/status', (req, res) => {
+  res.status(200).json({
     success: true,
     data: {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-      version: process.env.npm_package_version || '1.0.0'
+      backend: {
+        status: 'online',
+        port: process.env.PORT || 3001,
+        uptime: process.uptime()
+      },
+      aiEngine: {
+        url: process.env.AI_ENGINE_URL || 'http://localhost:3002',
+        status: 'unknown' // Frontend will check this separately
+      },
+      hugoGenerator: {
+        url: process.env.HUGO_GENERATOR_URL || 'http://localhost:3003',
+        status: 'unknown' // Frontend will check this separately
+      }
     }
   });
 });
