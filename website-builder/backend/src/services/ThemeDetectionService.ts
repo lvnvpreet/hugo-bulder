@@ -1,6 +1,7 @@
-import { WizardData } from '../types/wizard';
+// import { WizardData } from '../types/wizard';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 
 // Import shared types - we'll define them locally for type safety
 export interface ThemeConfig {
@@ -36,22 +37,30 @@ export interface ColorScheme {
   text: string;
 }
 
-// Load shared constants
-// For production, this code would be replaced with direct imports when project structure allows it
+// Calculate path using import.meta.url (ES modules approach)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const sharedThemesPath = path.resolve(__dirname, '../../../shared/constants/themes.js');
 let VERIFIED_THEMES: ThemeConfig[] = [];
 let INDUSTRY_COLORS: { [key: string]: ColorScheme } = {};
 
-try {
-  // Try to load from shared constants file
-  if (fs.existsSync(sharedThemesPath)) {
-    const shared = require(sharedThemesPath);
-    VERIFIED_THEMES = shared.VERIFIED_THEMES;
-    INDUSTRY_COLORS = shared.INDUSTRY_COLORS;
+// Load shared themes function (async)
+async function loadSharedThemes() {
+  try {    if (fs.existsSync(sharedThemesPath)) {
+      const shared = await import(sharedThemesPath);
+      if (shared.VERIFIED_THEMES && Array.isArray(shared.VERIFIED_THEMES)) {
+        VERIFIED_THEMES = shared.VERIFIED_THEMES;
+      }
+      if (shared.INDUSTRY_COLORS && typeof shared.INDUSTRY_COLORS === 'object') {
+        INDUSTRY_COLORS = shared.INDUSTRY_COLORS;
+      }
+    }
+  } catch (error) {
+    console.error('Error loading shared theme constants:', error);
   }
-} catch (error) {
-  console.error('Error loading shared theme constants:', error);
-  // Fallback to essential theme definitions if loading fails
+}
+// This is a placeholder for correct deletion - removed problematic code
   if (!VERIFIED_THEMES || VERIFIED_THEMES.length === 0) {
     VERIFIED_THEMES = [
       {
@@ -98,7 +107,7 @@ try {
       }
     };
   }
-}
+
 
 export interface ThemeRecommendation {
   themeId: string;
@@ -108,14 +117,34 @@ export interface ThemeRecommendation {
 }
 
 export class ThemeDetectionService {
-  private themes = VERIFIED_THEMES;
+  private themes: ThemeConfig[];
+  private initialized = false;
+
+  constructor() {
+    this.themes = [...VERIFIED_THEMES];
+  }
+  
+  /**
+   * Initialize service by loading shared themes
+   */
+  async initialize() {
+    if (!this.initialized) {
+      await loadSharedThemes();
+      this.themes = [...VERIFIED_THEMES];
+      this.initialized = true;
+    }
+  }
 
   /**
    * Automatically detect the best theme based on wizard data
    * @param wizardData - Complete wizard data from frontend
    * @returns ThemeRecommendation with selected theme and confidence
    */
-  public detectTheme(wizardData: WizardData): ThemeRecommendation {
+  public async detectTheme(wizardData: any): Promise<ThemeRecommendation> {
+    // Ensure themes are loaded
+    if (!this.initialized) {
+      await this.initialize();
+    }
     const scores: { [themeId: string]: { score: number; reasons: string[] } } = {};    // Initialize scores for all themes
     this.themes.forEach(theme => {
       scores[theme.id] = { score: 0, reasons: [] };
@@ -292,11 +321,10 @@ export class ThemeDetectionService {
       fallback: secondBest?.themeId
     };
   }
-
   /**
    * Get color scheme based on business category and selected theme
    */
-  public detectColorScheme(wizardData: WizardData, themeId: string): ColorScheme {
+  public detectColorScheme(wizardData: any, themeId: string): ColorScheme {
     // First, try to get industry-specific colors
     if (wizardData.businessCategory) {
       const businessCategory = wizardData.businessCategory.industry?.toLowerCase() || 
