@@ -10,6 +10,7 @@ interface ProjectData {
   wizardData?: any;
   type?: string;
   websiteType?: string;
+  isCompleted?: boolean;
 }
 
 interface ProjectFilters {
@@ -43,6 +44,17 @@ const STEP_NAMES = {
 export class ProjectService {  // Project CRUD operations
   async createProject(userId: string, projectData: ProjectData): Promise<any> {
     try {
+      // Validate wizard data completeness if provided
+      const isCompleted = projectData.wizardData ? 
+        this.isWizardDataComplete(projectData.wizardData) : false;
+
+      console.log('🔍 Creating project:', {
+        userId,
+        projectName: projectData.name,
+        hasWizardData: !!projectData.wizardData,
+        isCompleted
+      });
+
       // Check user's project limit
       let user = await prisma.user.findUnique({
         where: { id: userId },
@@ -74,7 +86,9 @@ export class ProjectService {  // Project CRUD operations
       }
 
       // Generate unique slug
-      const slug = await this.generateProjectSlug(projectData.name, userId);      // Create project
+      const slug = await this.generateProjectSlug(projectData.name, userId);
+
+      // Create project
       const project = await prisma.project.create({
         data: {
           name: projectData.name,
@@ -84,8 +98,9 @@ export class ProjectService {  // Project CRUD operations
           userId,
           wizardData: projectData.wizardData || {},
           currentStep: 1,
-          // If wizardData is provided and has all required steps, mark as completed
-          isCompleted: projectData.wizardData && this.isWizardDataComplete(projectData.wizardData),
+          isCompleted, // This is crucial!
+          createdAt: new Date(),
+          updatedAt: new Date()
         },
         include: {
           wizardSteps: true,
@@ -96,6 +111,11 @@ export class ProjectService {  // Project CRUD operations
         }
       });
 
+      console.log('✅ Project created:', project.id);
+      console.log('Project slug:', project.slug);
+
+      console.log('✅ Project created with isCompleted:', project.isCompleted);
+
       // Update user's project count
       await prisma.user.update({
         where: { id: userId },
@@ -104,7 +124,7 @@ export class ProjectService {  // Project CRUD operations
 
       return project;
     } catch (error) {
-      console.error('Create project error:', error);
+      console.error('❌ Project creation failed:', error);
       throw error;
     }
   }
@@ -613,32 +633,29 @@ export class ProjectService {  // Project CRUD operations
    */
   private isWizardDataComplete(wizardData: any): boolean {
     if (!wizardData || typeof wizardData !== 'object') {
+      console.log('❌ Wizard data is null or not an object');
       return false;
     }
 
-    // Check for essential wizard data fields based on actual frontend structure
-    const hasWebsiteStructure = wizardData.websiteStructure && 
-      typeof wizardData.websiteStructure === 'object' &&
-      wizardData.websiteStructure.type && 
-      Array.isArray(wizardData.websiteStructure.selectedPages) &&
-      wizardData.websiteStructure.selectedPages.length > 0;
+    // Define ALL required fields that must be present
+    const requiredFields = [
+      'businessInfo.name',
+      'businessInfo.description', 
+      'websiteType.category',
+      'businessCategory.name',
+      'websitePurpose.goals',
+      'themeConfig.hugoTheme'
+    ];
 
-    const hasThemeConfig = wizardData.themeConfig && 
-      typeof wizardData.themeConfig === 'object' &&
-      typeof wizardData.themeConfig.hugoTheme === 'string' &&
-      wizardData.themeConfig.hugoTheme.length > 0;
+    for (const field of requiredFields) {
+      const value = field.split('.').reduce((obj, key) => obj?.[key], wizardData);
+      if (!value || (Array.isArray(value) && value.length === 0) || (typeof value === 'string' && value.trim() === '')) {
+        console.log(`❌ Missing required field: ${field}`);
+        return false;
+      }
+    }
 
-    // Check if we have the minimum required data for generation
-    const hasMinimumData = hasWebsiteStructure && hasThemeConfig;
-
-    console.log('Wizard data completeness check:', {
-      hasWebsiteStructure,
-      hasThemeConfig,
-      hasMinimumData,
-      websiteStructureType: wizardData.websiteStructure?.type,
-      hugoTheme: wizardData.themeConfig?.hugoTheme
-    });
-
-    return hasMinimumData;
+    console.log('✅ All wizard data fields are complete');
+    return true;
   }
 }

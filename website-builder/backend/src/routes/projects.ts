@@ -67,6 +67,8 @@ router.post(
     const service = getProjectService(userId);
     const project = await service.createProject(userId, req.body);
 
+    
+
     res.status(201).json({
       success: true,
       data: project,
@@ -269,6 +271,40 @@ router.get(
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] || 'unknown',
       }
+    });
+  })
+);
+
+// POST /projects/:id/complete - Mark project as completed
+router.post(
+  '/:id/complete',
+  validateParams(projectSchemas.projectId),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id: projectId } = req.params;
+    const userId = req.user.id;
+
+    // Verify project ownership
+    const project = await projectService.getProject(projectId, userId);
+    if (!project) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'PROJECT_NOT_FOUND', message: 'Project not found' }
+      });
+      return;
+    }
+
+    // Mark project as completed
+    const updatedProject = await projectService.updateProject(projectId, userId, {
+      isCompleted: true,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ Project ${projectId} marked as completed`);
+
+    res.json({
+      success: true,
+      data: updatedProject,
+      message: 'Project marked as completed'
     });
   })
 );

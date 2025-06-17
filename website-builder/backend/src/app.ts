@@ -27,6 +27,7 @@ import assetRoutes from './routes/assets';
 import referenceRoutes from './routes/reference';
 import generationRoutes from './routes/generations';
 import webhookRoutes from './routes/webhooks';
+import healthRoutes from './routes/health';
 
 // Import swagger configuration
 import { swaggerSpec } from './config/swagger';
@@ -260,6 +261,7 @@ app.use('/api/reference', authMiddleware, referenceRoutes);
 app.use('/api/generations', authMiddleware, generationRoutes);
 app.use('/api/webhooks', authMiddleware, webhookRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
+app.use('/api/health', authMiddleware, healthRoutes);
 
 // API documentation route
 /**

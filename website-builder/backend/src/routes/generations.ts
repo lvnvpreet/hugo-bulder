@@ -2,7 +2,10 @@ import { Router, Request, Response } from 'express';
 import { validate, validateQuery, validateParams } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { websiteGenerationService } from '../services/WebsiteGenerationService';
+import { ProjectService } from '../services/ProjectService';
+import { ThemeDetectionService } from '../services/ThemeDetectionService';
 import { generationSchemas } from '../validation/generationSchemas';
+import { db } from '../config/database';
 import * as fs from 'fs-extra';
 
 // Define AuthenticatedRequest interface
@@ -17,6 +20,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 const router = Router();
+const projectService = new ProjectService();
 
 // POST /generations/:projectId/start - Start website generation
 /**
@@ -126,33 +130,77 @@ router.post(
   validateParams(generationSchemas.projectId),
   validate(generationSchemas.startGeneration),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const projectId = req.params.projectId!;
-    const userId = req.user.id;
-    
-    console.log('Generation request for project:', projectId, 'user:', userId);
-    console.log('Request body:', req.body);
-    
-    // Start generation process for all projects
-    const generationId = await websiteGenerationService.startGeneration({
-      projectId,
-      userId,
-      hugoTheme: req.body.hugoTheme,
-      customizations: req.body.customizations,
-      contentOptions: req.body.contentOptions,
-    });
+    try {
+      const { projectId } = req.params;
+      const userId = req.user.id;
 
-    res.status(202).json({
-      success: true,
-      data: {
-        generationId,
-        status: 'PENDING',
-        message: 'Website generation started successfully',
-      },
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
+      console.log('Generation request for project:', projectId, 'user:', userId);
+      console.log('Request body:', req.body);
+
+      // Verify project exists and user owns it
+      const project = await projectService.getProject(projectId!, userId);
+
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'PROJECT_NOT_FOUND',
+            message: 'Project not found or access denied',
+            details: { projectId, userId }
+          }
+        });
+      }
+
+      // Check if project is completed
+      if (!project.isCompleted) {
+        console.log(`❌ Project ${projectId} is not completed:`, {
+          isCompleted: project.isCompleted,
+          hasWizardData: !!project.wizardData
+        });
+
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PROJECT_NOT_COMPLETED',
+            message: 'Project must be completed before generation can start',
+            details: {
+              projectId,
+              isCompleted: project.isCompleted,
+              hasWizardData: !!project.wizardData,
+              suggestion: 'Complete all wizard steps or call /projects/:id/complete endpoint'
+            }
+          }
+        });
+      }      // Proceed with generation...
+      const generationId = await websiteGenerationService.startGeneration({
+        projectId: projectId!,
+        userId,
+        hugoTheme: req.body.hugoTheme,
+        customizations: req.body.customizations,
+        contentOptions: req.body.contentOptions,
+      });
+
+      return res.status(202).json({
+        success: true,
+        data: { generationId },
+        message: 'Generation started successfully',
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    } catch (error: any) {
+      console.error('❌ Generation start failed:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response?.data
+      });
+      return res.status(500).json({
+        success: false,
+        error: { code: 'GENERATION_START_FAILED', message: 'Failed to start generation' }
+      });
+    }
   })
 );
 
@@ -238,9 +286,9 @@ router.post(
 router.get(
   '/:generationId/status',
   validateParams(generationSchemas.generationId),
-  validateQuery(generationSchemas.generationStatusQuery),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  validateQuery(generationSchemas.generationStatusQuery), asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const generationId = req.params.generationId!;
-    
+
     // Get generation status through the service
     try {
       const result = await websiteGenerationService.getGenerationStatus(
@@ -355,12 +403,12 @@ router.get(
 // GET /generations/:generationId/download - Download generated website
 router.get(
   '/:generationId/download',
-  validateParams(generationSchemas.generationId),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  validateParams(generationSchemas.generationId), asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const generationId = req.params.generationId!;
     const userId = req.user.id;
-    
+
     console.log('Download request for generation:', generationId, 'user:', userId);
-    
+
     // Regular generation download logic
     const downloadInfo = await websiteGenerationService.downloadGeneration(
       generationId,
@@ -435,8 +483,8 @@ router.post(
 
         results.push({ projectId, generationId });
       } catch (error: any) {
-        results.push({ 
-          projectId, 
+        results.push({
+          projectId,
           error: error.message || 'Failed to start generation',
         });
       }
@@ -563,15 +611,108 @@ router.get(
       buildOutput: 'Hugo build completed successfully\nProcessed 5 pages\nGenerated 25 files\nTotal size: 2.1MB',
       warnings: [],
       errors: [],
-    };
-
-    res.json({
+    };    res.json({
       success: true,
       data: logs,
       meta: {
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] || 'unknown',
       },
+    });
+  })
+);
+
+/**
+ * GET /generations/detect-theme/:projectId
+ * Preview what theme would be auto-detected for a project
+ * @swagger
+ * /api/generations/detect-theme/{projectId}:
+ *   get:
+ *     summary: Detect theme for project
+ *     description: Preview what theme would be automatically detected for a project based on wizard data
+ *     tags: [Website Generation]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Project ID to detect theme for
+ *     responses:
+ *       200:
+ *         description: Theme recommendation generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     recommendedTheme:
+ *                       type: string
+ *                     confidence:
+ *                       type: number
+ *                     reasons:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     explanation:
+ *                       type: string
+ *                     colorScheme:
+ *                       type: object
+ *                     fallback:
+ *                       type: string
+ *       400:
+ *         description: Project wizard data not found
+ *       404:
+ *         description: Project not found
+ */
+router.get(
+  '/detect-theme/:projectId',
+  validateParams(generationSchemas.detectThemeParam),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const projectId = req.params.projectId!;
+
+    // Get project with wizard data
+    const project = await db.getClient().project.findFirst({
+      where: { id: projectId, userId: req.user.id },
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'Project not found', code: 'PROJECT_NOT_FOUND' }
+      });
+    }
+
+    if (!project?.wizardData) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Project wizard data not found', code: 'WIZARD_INCOMPLETE' }
+      });
+    }
+
+    // Detect theme
+    const themeDetector = new ThemeDetectionService();
+    const recommendation = themeDetector.detectTheme(project.wizardData);
+    const colorScheme = themeDetector.detectColorScheme(project.wizardData, recommendation.themeId);
+    const explanation = themeDetector.getThemeExplanation(recommendation);
+
+    return res.json({
+      success: true,
+      data: {
+        recommendedTheme: recommendation.themeId,
+        confidence: recommendation.confidence,
+        reasons: recommendation.reasons,
+        explanation,
+        colorScheme,
+        fallback: recommendation.fallback
+      }
     });
   })
 );

@@ -1,4 +1,4 @@
-// Main wizard data interface
+// Backend wizard data types - shared with frontend
 export interface WizardData {
   // Step 1: Website Type
   websiteType: {
@@ -30,6 +30,7 @@ export interface WizardData {
     secondary?: string;
     goals: string[];      // Array of specific goals
   } | null;
+
   // Step 5: Business Description ("What we do")
   businessDescription: {
     description: string;           // Main business description
@@ -88,6 +89,7 @@ export interface WizardData {
     hasBlog?: boolean;
     hasEcommerce?: boolean;
   } | null;
+
   // Step 9: Theme Configuration - UPDATED to remove hugoTheme
   themeConfig: {
     // Removed: hugoTheme: string;
@@ -131,41 +133,6 @@ export interface StepCompletion {
   };
 }
 
-// Wizard store interface
-export interface WizardStore {
-  // Data
-  data: WizardData;
-  stepCompletion: StepCompletion;
-  currentStep: number;
-  isGenerationComplete: boolean;
-  
-  // Navigation
-  goToStep: (step: number) => void;
-  nextStep: () => void;
-  previousStep: () => void;
-  
-  // Data Management
-  updateData: (step: keyof WizardData, value: any) => void;
-  updateStepData: (step: number, data: Partial<WizardData>) => void;
-  
-  // Generation Management
-  setGenerationComplete: (complete: boolean) => void;
-  
-  // Validation
-  validateStep: (step: number) => boolean;
-  completeStep: (step: number) => void;
-  
-  // Persistence
-  saveToStorage: () => void;
-  loadFromStorage: () => void;
-  clearData: () => void;
-  
-  // Utilities
-  getProgress: () => number;
-  canNavigateToStep: (step: number) => boolean;
-  getStepErrors: (step: number) => string[];
-}
-
 // Additional helper types
 export interface ValidationResult {
   isValid: boolean;
@@ -197,20 +164,4 @@ export interface ServiceTemplate {
   pricing?: string;
   features?: string[];
   isPopular?: boolean;
-}
-
-export interface HugoTheme {
-  id: string;
-  name: string;
-  description: string;
-  preview: string;
-  demoUrl?: string;
-  features: string[];
-  compatibility: {
-    singlePage: boolean;
-    multiPage: boolean;
-    blog: boolean;
-    portfolio: boolean;
-    ecommerce: boolean;
-  };
 }

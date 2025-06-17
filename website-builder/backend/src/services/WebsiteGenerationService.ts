@@ -2,6 +2,7 @@ import { PrismaClient, SiteGenerationStatus, Project, SiteGeneration } from '@pr
 import { db } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { webhookService } from './WebhookService';
+import { ThemeDetectionService } from './ThemeDetectionService';
 import { 
   GenerationStep, 
   GENERATION_STEPS, 
@@ -34,7 +35,7 @@ interface WebhookPayload {
 interface GenerationOptions {
   projectId: string;
   userId: string;
-  hugoTheme: string;
+  hugoTheme?: string; // Made optional for auto-detection
   customizations?: {
     colors?: Record<string, string>;
     fonts?: Record<string, string>;
@@ -46,6 +47,7 @@ interface GenerationOptions {
     length?: 'short' | 'medium' | 'long';
     includeSEO?: boolean;
   };
+  autoDetectTheme?: boolean; // NEW: Flag to enable auto-detection
 }
 
 interface GenerationProgress {
@@ -69,50 +71,67 @@ export class WebsiteGenerationService {
   private prisma: PrismaClient;
   private outputDir: string;
   private tempDir: string;
+  private themeDetector: ThemeDetectionService;
+
   constructor() {
     this.prisma = db.getClient();
     this.outputDir = path.join(process.cwd(), 'generated-sites');
     this.tempDir = path.join(process.cwd(), 'temp-generation');
+    this.themeDetector = new ThemeDetectionService();
     this.ensureDirectories();
   }
 
   private async ensureDirectories(): Promise<void> {
     await fs.ensureDir(this.outputDir);
     await fs.ensureDir(this.tempDir);
-  }
-  /**
-   * Start website generation process
+  }  /**
+   * UPDATED: Auto-detect theme if not provided
    */
   async startGeneration(options: GenerationOptions): Promise<string> {
     try {
       // Validate options
       validateGenerationOptions(options);
 
-      // Validate project exists and user has access
-      const project = await this.prisma.project.findFirst({
-        where: {
-          id: options.projectId,
-          userId: options.userId,
-        },
-        include: {
-          wizardSteps: true,
-        },
-      });
+      // Get project with wizard data
+      const project = await this.getProjectWithWizardData(options.projectId, options.userId);
 
-      if (!project) {
-        throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+      // AUTO-DETECT THEME (since frontend no longer sends hugoTheme)
+      let selectedTheme = options.hugoTheme;
+      let themeExplanation = '';
+      
+      if (!selectedTheme && project.wizardData) {
+        console.log('🤖 Auto-detecting theme based on project data...');
+        const recommendation = this.themeDetector.detectTheme(project.wizardData);
+        selectedTheme = recommendation.themeId;
+        themeExplanation = this.themeDetector.getThemeExplanation(recommendation);
+        
+        console.log(`✅ Auto-selected theme: ${selectedTheme} (${recommendation.confidence}% confidence)`);
       }
 
-      if (!project.isCompleted) {
-        throw new AppError('Project wizard is not completed', 400, 'WIZARD_INCOMPLETE');
+      // Fallback to default theme if still no theme
+      if (!selectedTheme) {
+        selectedTheme = 'ananke';
+        console.log('⚠️ No theme detected, using default: ananke');
+      }      // AUTO-DETECT COLOR SCHEME if not provided
+      let colorScheme = options.customizations?.colors;
+      if (!colorScheme && project.wizardData) {
+        const detectedColors = this.themeDetector.detectColorScheme(project.wizardData, selectedTheme);
+        colorScheme = {
+          primary: detectedColors.primary,
+          secondary: detectedColors.secondary,
+          accent: detectedColors.accent,
+          background: detectedColors.background,
+          text: detectedColors.text
+        };
+        console.log('🎨 Auto-detected color scheme:', colorScheme);
       }
 
-      // Create generation record
+      // Create generation record with detected theme
       const generation = await this.prisma.siteGeneration.create({
         data: {
           projectId: options.projectId,
           status: SiteGenerationStatus.PENDING,
-          hugoTheme: options.hugoTheme,
+          hugoTheme: selectedTheme,
           startedAt: new Date(),
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
         },
@@ -126,10 +145,17 @@ export class WebsiteGenerationService {
         userId: options.userId,
         status: SiteGenerationStatus.PENDING,
         timestamp: new Date().toISOString(),
-      });
+      });      // Start async generation process with auto-detected theme
+      const updatedOptions: GenerationOptions & { hugoTheme: string } = {
+        ...options,
+        hugoTheme: selectedTheme,
+        customizations: {
+          ...options.customizations,
+          colors: colorScheme || options.customizations?.colors
+        }
+      };
 
-      // Start async generation process
-      this.processGeneration(generation.id, project, options).catch((error) => {
+      this.processGeneration(generation.id, project, updatedOptions).catch((error) => {
         console.error(`Generation ${generation.id} failed:`, error);
         this.updateGenerationStatus(generation.id, SiteGenerationStatus.FAILED, {
           errorLog: error instanceof Error ? error.message : String(error),
@@ -137,9 +163,48 @@ export class WebsiteGenerationService {
       });
 
       return generation.id;
-    } catch (error) {      if (error instanceof AppError || error instanceof GenerationValidationError) throw error;
+    } catch (error) {
+      if (error instanceof AppError || error instanceof GenerationValidationError) throw error;
       throw new AppError('Failed to start generation', 500, 'GENERATION_START_ERROR');
     }
+  }
+  /**
+   * Get project with wizard data - helper method
+   */
+  private async getProjectWithWizardData(projectId: string, userId: string): Promise<Project & { wizardData: any; wizardSteps: any[] }> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        userId: userId,
+      },
+      include: {
+        wizardSteps: true,
+      },
+    });
+
+    console.log('🔍 Generation service - Project lookup:', {
+      projectId: projectId,
+      userId: userId,
+      found: !!project,
+      isCompleted: project?.isCompleted,
+      hasWizardData: !!project?.wizardData
+    });
+
+    if (!project) {
+      throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+    }
+
+    if (!project.isCompleted) {
+      console.log('❌ Project not completed:', {
+        projectId: project.id,
+        isCompleted: project.isCompleted,
+        currentStep: project.currentStep,
+        wizardStepsCount: project.wizardSteps?.length
+      });
+      throw new AppError('Project wizard is not completed', 400, 'WIZARD_INCOMPLETE');
+    }
+
+    return project as Project & { wizardData: any; wizardSteps: any[] };
   }
 
   /**
@@ -370,11 +435,10 @@ export class WebsiteGenerationService {
 
   /**
    * Process generation workflow
-   */
-  private async processGeneration(
+   */  private async processGeneration(
     generationId: string,
     project: Project & { wizardSteps: any[] },
-    options: GenerationOptions
+    options: GenerationOptions & { hugoTheme: string }
   ): Promise<void> {
     const startTime = Date.now();
 
@@ -413,13 +477,12 @@ export class WebsiteGenerationService {
       throw error;
     }
   }
-
   /**
    * Generate AI content for the website
    */
   private async generateAIContent(
     project: Project & { wizardSteps: any[] },
-    options: GenerationOptions
+    options: GenerationOptions & { hugoTheme: string }
   ): Promise<any> {
     // This would integrate with the AI service
     // For now, return mock content based on wizard data
@@ -454,12 +517,11 @@ export class WebsiteGenerationService {
 
   /**
    * Build Hugo site with generated content
-   */
-  private async buildHugoSite(
+   */  private async buildHugoSite(
     generationId: string,
     project: Project,
     content: any,
-    options: GenerationOptions
+    options: GenerationOptions & { hugoTheme: string }
   ): Promise<{ sitePath: string; fileCount: number }> {
     const sitePath = path.join(this.tempDir, generationId);
     

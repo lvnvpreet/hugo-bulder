@@ -3,6 +3,13 @@ import { promisify } from 'util';
 import * as path from 'path';
 import axios from 'axios';
 import { FileManager } from '../utils/FileManager';
+// Import shared theme constants
+import fs from 'fs';
+const sharedThemesPath = path.resolve(process.cwd(), '../../shared/constants/themes.js');
+// We'll use a require approach to handle paths better
+const ThemeConstants = fs.existsSync(sharedThemesPath) ? require(sharedThemesPath) : { 
+  VERIFIED_THEMES: []
+};
 
 export class ThemeInstaller {
   private execAsync = promisify(exec);
@@ -173,8 +180,7 @@ export class ThemeInstaller {
       return false;
     }
   }
-  
-  // Get popular Hugo themes configuration
+    // Get popular Hugo themes configuration
   getPopularThemes(): Array<{
     id: string;
     name: string;
@@ -183,6 +189,19 @@ export class ThemeInstaller {
     category: string;
     suitableFor: string[];
   }> {
+    // First try to use shared theme constants
+    if (ThemeConstants.VERIFIED_THEMES && ThemeConstants.VERIFIED_THEMES.length > 0) {
+      return ThemeConstants.VERIFIED_THEMES.map((theme: any) => ({
+        id: theme.id,
+        name: theme.name,
+        displayName: theme.displayName,
+        githubUrl: theme.githubUrl,
+        category: theme.categories[0] || 'business',
+        suitableFor: theme.websiteTypes || []
+      }));
+    }
+    
+    // Fallback to hardcoded themes
     return [
       {
         id: 'papermod',
@@ -199,14 +218,6 @@ export class ThemeInstaller {
         githubUrl: 'https://github.com/theNewDynamic/gohugo-theme-ananke.git',
         category: 'business',
         suitableFor: ['business', 'portfolio', 'blog']
-      },
-      {
-        id: 'academic',
-        name: 'academic',
-        displayName: 'Academic - Portfolio Theme',
-        githubUrl: 'https://github.com/wowchemy/starter-hugo-academic.git',
-        category: 'portfolio',
-        suitableFor: ['portfolio', 'academic', 'personal']
       },
       {
         id: 'mainroad',

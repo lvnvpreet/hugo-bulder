@@ -5,6 +5,14 @@ import { ThemeInstaller } from './ThemeInstaller';
 import { ContentGenerator } from './ContentGenerator';
 import { ConfigurationManager } from './ConfigurationManager';
 import { FileManager } from '../utils/FileManager';
+// Import directly from shared path
+import fs from 'fs';
+const sharedThemesPath = path.resolve(process.cwd(), '../../shared/constants/themes.js');
+// We'll use a require approach to handle paths better
+const ThemeConstants = fs.existsSync(sharedThemesPath) ? require(sharedThemesPath) : { 
+  VERIFIED_THEMES: [], 
+  getThemeById: (id: string) => null 
+};
 
 export class HugoSiteBuilder {
   private hugoCLI: HugoCLI;
@@ -177,13 +185,36 @@ export class HugoSiteBuilder {
       throw new Error(`Hugo site creation failed: ${error.message}`);
     }
   }
-  
   private async installTheme(siteDir: string, themeConfig: any): Promise<any> {
     try {
-      // Get theme configuration from popular themes
-      const popularThemes = this.themeInstaller.getPopularThemes();
-      const selectedTheme = popularThemes.find(theme => theme.id === themeConfig.id) ||
-                           popularThemes[0]; // Default to first theme
+      // Define a theme type that matches both sources
+      type Theme = {
+        id: string;
+        name: string;
+        githubUrl: string;
+      };
+      
+      // Get theme configuration from verified themes (shared constants)
+      const verifiedThemes: Theme[] = ThemeConstants.VERIFIED_THEMES || this.themeInstaller.getPopularThemes();
+      
+      // If hugoTheme is specified, use it directly
+      let selectedTheme: Theme | undefined;
+      
+      if (themeConfig.hugoTheme) {
+        // Direct theme selection
+        selectedTheme = verifiedThemes.find((theme: Theme) => theme.id === themeConfig.hugoTheme);
+      } else {
+        // Auto-detected theme (from themeConfig.id)
+        selectedTheme = verifiedThemes.find((theme: Theme) => theme.id === themeConfig.id);
+      }
+      
+      // Fallback to default theme if not found
+      if (!selectedTheme) {
+        console.warn(`Theme ${themeConfig.id || themeConfig.hugoTheme} not found, using default theme`);
+        selectedTheme = verifiedThemes.find((theme: Theme) => theme.id === 'ananke') || verifiedThemes[0];
+      }
+      
+      console.log(`Installing theme: ${selectedTheme.name} (${selectedTheme.id})`);
       
       // Install theme
       const installResult = await this.themeInstaller.installTheme(siteDir, selectedTheme);
@@ -191,8 +222,8 @@ export class HugoSiteBuilder {
       if (!installResult.success) {
         // Try fallback theme if primary fails
         console.warn(`Primary theme failed, trying fallback...`);
-        const fallbackTheme = popularThemes.find(theme => theme.id === 'ananke') ||
-                              popularThemes[0];
+        const fallbackTheme = verifiedThemes.find((theme: Theme) => theme.id === 'ananke') ||
+                            verifiedThemes[0];
         
         return await this.themeInstaller.installTheme(siteDir, fallbackTheme);
       }

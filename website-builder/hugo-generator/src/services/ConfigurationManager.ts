@@ -1,6 +1,22 @@
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { FileManager } from '../utils/FileManager';
+// Import shared theme constants
+import fs from 'fs';
+const sharedThemesPath = path.resolve(process.cwd(), '../../shared/constants/themes.js');
+// We'll use a require approach to handle paths better
+const ThemeConstants = fs.existsSync(sharedThemesPath) ? require(sharedThemesPath) : { 
+  VERIFIED_THEMES: [],
+  INDUSTRY_COLORS: {},
+  getThemeById: (id: string) => null,
+  getColorSchemeForIndustry: (industry: string) => ({
+    primary: '#3B82F6',
+    secondary: '#1E40AF',
+    accent: '#F59E0B',
+    background: '#FFFFFF',
+    text: '#1F2937'
+  })
+};
 
 export class ConfigurationManager {
   private fileManager: FileManager;
@@ -138,11 +154,49 @@ export class ConfigurationManager {
     
     return config;
   }
-  
-  private generateSiteParams(wizardData: any, themeConfig: any, seoData: any): any {
+    private generateSiteParams(wizardData: any, themeConfig: any, seoData: any): any {
     const businessInfo = wizardData.businessInfo || {};
     const businessDescription = wizardData.businessDescription || {};
     const locationInfo = wizardData.locationInfo || {};
+    const businessCategory = wizardData.businessCategory?.industry?.toLowerCase() || 'business';
+    
+    // Get color scheme from shared constants if possible
+    let colorScheme = themeConfig.colorScheme || {
+      primary: '#3B82F6',
+      secondary: '#1E40AF',
+      accent: '#F59E0B',
+      background: '#FFFFFF',
+      text: '#1F2937'
+    };
+    
+    // Try to use industry-specific color scheme
+    if (ThemeConstants.getColorSchemeForIndustry) {
+      const industryColors = ThemeConstants.getColorSchemeForIndustry(businessCategory);
+      if (industryColors) {
+        colorScheme = industryColors;
+      }
+    } else if (ThemeConstants.INDUSTRY_COLORS && ThemeConstants.INDUSTRY_COLORS[businessCategory]) {
+      colorScheme = ThemeConstants.INDUSTRY_COLORS[businessCategory];
+    }
+    
+    // Get theme details
+    const themeId = themeConfig.id || themeConfig.hugoTheme || 'ananke';
+    let themeDetails: any = null;
+    
+    if (ThemeConstants.getThemeById) {
+      themeDetails = ThemeConstants.getThemeById(themeId);
+    } else if (ThemeConstants.VERIFIED_THEMES) {
+      themeDetails = ThemeConstants.VERIFIED_THEMES.find((t: any) => t.id === themeId);
+    }
+    
+    // Use theme's color scheme if no industry-specific one was found
+    if (themeDetails && themeDetails.colorScheme && !ThemeConstants.INDUSTRY_COLORS[businessCategory]) {
+      colorScheme = {
+        ...themeDetails.colorScheme,
+        background: '#FFFFFF',
+        text: '#1F2937'
+      };
+    }
     
     const params: any = {
       // Basic site info
@@ -161,11 +215,7 @@ export class ConfigurationManager {
       establishedYear: businessInfo.established || '',
       
       // Theme customization
-      colorScheme: themeConfig.colorScheme || {
-        primary: '#3B82F6',
-        secondary: '#1E40AF',
-        accent: '#F59E0B'
-      },
+      colorScheme: colorScheme,
       
       // Features
       showReadingTime: true,
@@ -244,9 +294,10 @@ export class ConfigurationManager {
       github: socialLinks.github || ''
     };
   }
-  
-  private addThemeSpecificConfig(config: any, themeId: string, wizardData: any): void {
+    private addThemeSpecificConfig(config: any, themeId: string, wizardData: any): void {
     const businessInfo = wizardData.businessInfo || {};
+    const businessDescription = wizardData.businessDescription || {};
+    const websiteType = wizardData.websiteType?.category || 'business';
     
     switch (themeId) {
       case 'papermod':
@@ -274,9 +325,9 @@ export class ConfigurationManager {
           
           // Profile mode for personal sites
           profileMode: {
-            enabled: wizardData.websiteType?.category === 'personal',
+            enabled: websiteType === 'personal',
             title: businessInfo.name || 'Welcome',
-            subtitle: businessInfo.description || '',
+            subtitle: businessDescription.shortDescription || businessInfo.description || '',
             imageUrl: '#',
             imageWidth: 120,
             imageHeight: 120,
@@ -286,7 +337,7 @@ export class ConfigurationManager {
           // Home info params
           homeInfoParams: {
             Title: businessInfo.name || 'Welcome',
-            Content: businessInfo.description || 'Welcome to our website'
+            Content: businessDescription.shortDescription || businessInfo.description || 'Welcome to our website'
           }
         };
         break;
@@ -303,21 +354,6 @@ export class ConfigurationManager {
         };
         break;
         
-      case 'academic':
-        config.params = {
-          ...config.params,
-          main_menu: {
-            enable: true,
-            align: 'l',
-            show_logo: true,
-            show_language: false,
-            show_day_night: true,
-            show_search: true,
-            highlight_active_link: true
-          }
-        };
-        break;
-        
       case 'mainroad':
         config.params = {
           ...config.params,
@@ -328,6 +364,80 @@ export class ConfigurationManager {
             tags_counter: true
           },
           thumbnail: true
+        };
+        break;
+        
+      case 'clarity':
+        config.params = {
+          ...config.params,
+          author: businessInfo.name || 'Website Owner',
+          github: businessInfo.socialLinks?.github || '',
+          twitter: businessInfo.socialLinks?.twitter || '',
+          linkedin: businessInfo.socialLinks?.linkedin || '',
+          enableSearch: true,
+          enableBreadcrumb: true,
+          enableCodeCopy: true,
+          enableToc: true
+        };
+        break;
+        
+      case 'terminal':
+        config.params = {
+          ...config.params,
+          contentTypeName: 'posts',
+          themeColor: config.params.colorScheme.primary,
+          showMenuItems: 5,
+          showLanguageSelector: false,
+          fullWidthTheme: false,
+          centerTheme: true,
+          autoCover: true,
+          showLastUpdated: true
+        };
+        break;
+        
+      case 'bigspring':
+        config.params = {
+          ...config.params,
+          logo: '/images/logo.svg',
+          email: businessInfo.email || '',
+          phone: businessInfo.phone || '',
+          address: this.formatAddress(wizardData.locationInfo),
+          map: '', 
+          description: businessDescription.shortDescription || businessInfo.description || '',
+          author: businessInfo.name || 'Website Owner',
+          contact: {
+            enable: true,
+            formAction: '#'
+          }
+        };
+        break;
+        
+      case 'restaurant':
+        config.params = {
+          ...config.params,
+          logo: '/images/logo.png',
+          home: 'Home',
+          restaurants_title: businessInfo.name || 'Our Restaurant',
+          gallery_title: 'Our Menu',
+          blog_title: 'Food Stories', 
+          contact_title: 'Visit Us',
+          footer_description: businessDescription.shortDescription || businessInfo.description || '',
+        };
+        break;
+        
+      case 'hargo':
+        config.params = {
+          ...config.params,
+          logo: '/images/logo.svg',
+          home: 'Home',
+          description: businessDescription.shortDescription || businessInfo.description || '',
+          author: businessInfo.name || 'Website Owner',
+          contact_info: {
+            address: this.formatAddress(wizardData.locationInfo),
+            email: businessInfo.email || '',
+            phone: businessInfo.phone || ''
+          },
+          snipcartApiKey: ''
         };
         break;
     }
