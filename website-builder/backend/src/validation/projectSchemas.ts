@@ -24,10 +24,17 @@ const projectSchemas = {
         'string.max': 'Description must be less than 500 characters'
       }),
     
+    // Accept both type and websiteType for flexibility
+    type: Joi.string()
+      .optional()
+      .messages({
+        'any.only': 'Invalid website type'
+      }),
+      
     websiteType: Joi.string()
       .valid(
         'business',
-        'portfolio',
+        'portfolio', 
         'blog',
         'ecommerce',
         'nonprofit',
@@ -37,12 +44,14 @@ const projectSchemas = {
         'landing-page',
         'other'
       )
-      .required()
+      .optional()
       .messages({
-        'any.only': 'Invalid website type',
-        'any.required': 'Website type is required'
-      })
-  }),
+        'any.only': 'Invalid website type'
+      }),
+      
+    // Allow wizardData as an optional complex object
+    wizardData: Joi.object().optional().unknown(true)
+  }).or('type', 'websiteType'), // At least one must be present
 
   // Project update validation
   updateProject: Joi.object({

@@ -4,16 +4,52 @@ import { useWizardStore } from '../../../store/wizardStore';
 
 const HUGO_THEMES = [
   {
-    id: 'hugo-theme-stack',
-    name: 'Stack',
-    description: 'Modern blog theme with dark mode support',
+    id: 'business-pro',
+    name: 'Business Pro',
+    description: 'Professional business theme with modern styling',
+    category: 'Business'
+  },
+  {
+    id: 'ananke',
+    name: 'Ananke',
+    description: 'Hugo default theme with clean design',
+    category: 'Business'
+  },
+  {
+    id: 'papermod',
+    name: 'PaperMod',
+    description: 'Clean and fast theme with excellent typography',
     category: 'Blog'
   },
   {
-    id: 'hugo-theme-ananke',
-    name: 'Ananke',
-    description: 'Hugo default theme with modern styling',
-    category: 'Business'
+    id: 'creative-studio',
+    name: 'Creative Studio',
+    description: 'Modern theme for creative professionals',
+    category: 'Portfolio'
+  },
+  {
+    id: 'tech-startup',
+    name: 'Tech Startup',
+    description: 'Modern theme perfect for technology companies',
+    category: 'Technology'
+  },
+  {
+    id: 'restaurant-deluxe',
+    name: 'Restaurant Deluxe',
+    description: 'Elegant theme for restaurants and food businesses',
+    category: 'Restaurant'
+  },
+  {
+    id: 'medical-care',
+    name: 'Medical Care',
+    description: 'Professional theme for healthcare providers',
+    category: 'Healthcare'
+  },
+  {
+    id: 'retail-store',
+    name: 'Retail Store',
+    description: 'Perfect theme for online stores and retail businesses',
+    category: 'E-commerce'
   }
 ];
 

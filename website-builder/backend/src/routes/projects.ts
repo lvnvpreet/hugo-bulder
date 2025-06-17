@@ -8,6 +8,12 @@ import { projectSchemas } from '../validation/projectSchemas';
 const router = Router();
 const projectService = new ProjectService();
 
+// Use regular project service for all users
+const getProjectService = (userId?: string) => {
+  console.log('Using regular project service for user:', userId);
+  return projectService;
+};
+
 // Extend Request interface for user
 interface AuthenticatedRequest extends Request {
   user: {
@@ -29,7 +35,10 @@ router.get(
   validateQuery(projectSchemas.listProjects),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { generationStatus, websiteType, limit, offset } = req.query as any;
     
-    const result = await projectService.getProjects(req.user.id, {
+    const userId = req.user.id;
+    const service = getProjectService(userId);
+    
+    const result = await service.getProjects(userId, {
       generationStatus,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
@@ -50,9 +59,13 @@ router.get(
 router.post(
   '/',
   projectRateLimit,
-  validate(projectSchemas.createProject),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const project = await projectService.createProject(req.user.id, req.body);
+  validate(projectSchemas.createProject),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user.id;
+    console.log('Creating project for user:', userId);
+    console.log('Request body:', req.body);
+    
+    const service = getProjectService(userId);
+    const project = await service.createProject(userId, req.body);
 
     res.status(201).json({
       success: true,
@@ -69,9 +82,10 @@ router.post(
 // GET /projects/:id - Get single project with wizard data
 router.get(
   '/:id',
-  validateParams(projectSchemas.projectId),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const project = await projectService.getProject(req.params.id, req.user.id);
+  validateParams(projectSchemas.projectId),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user.id;
+    const service = getProjectService(userId);
+    const project = await service.getProject(req.params.id, userId);
 
     if (!project) {
       res.status(404).json({

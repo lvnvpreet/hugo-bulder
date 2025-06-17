@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/auth';
+
 import { validate } from '../middleware/validation';
 import { authSchemas } from '../validation/authSchemas';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -283,6 +284,45 @@ router.post(
         requestId: req.headers['x-request-id'] || 'unknown',
       },
     });
+  })
+);
+
+
+
+// DEBUG: Test JWT validation endpoint (remove in production)
+router.get('/debug/validate-token', 
+  asyncHandler(async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+      res.status(400).json({
+        success: false,
+        error: 'No token provided'
+      });
+      return;
+    }
+    
+    try {
+      const user = await authService.validateToken(token);
+      res.json({
+        success: true,
+        data: {
+          tokenValid: !!user,
+          user: user ? {
+            id: user.id,
+            email: user.email,
+            name: user.name
+          } : null
+        }
+      });
+    } catch (error: any) {
+      res.json({
+        success: false,
+        error: error.message,
+        tokenProvided: token.substring(0, 20) + '...'
+      });
+    }
   })
 );
 

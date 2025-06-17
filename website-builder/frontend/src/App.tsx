@@ -11,14 +11,10 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import DiagnosticsPage from '@/pages/DiagnosticsPage'
 import { useTheme } from '@/hooks'
-import { useAuthInit } from '@/hooks/useAuthInit'
 import { useEffect } from 'react'
 
 function App() {
   const { theme } = useTheme()
-  
-  // Initialize authentication state
-  useAuthInit()
 
   // Apply theme on mount and when theme changes
   useEffect(() => {

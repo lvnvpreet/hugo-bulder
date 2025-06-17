@@ -325,21 +325,25 @@ apiClient.interceptors.response.use(
     // Handle HTTP errors with detailed feedback
     const status = error.response.status
     const data = error.response.data as any
-    
-    switch (status) {
-      case 401:
+      switch (status) {      case 401:
         console.error('🔐 Authentication required')
         toast.error('Authentication required. Please log in again.')
         localStorage.removeItem('authToken')
         // Redirect to login if not already there
         if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
+          const returnUrl = encodeURIComponent(window.location.pathname + window.location.search)
+          window.location.href = `/login?returnUrl=${returnUrl}`
         }
         break
         
       case 403:
         console.error('🚫 Access forbidden')
-        toast.error('You do not have permission to perform this action')
+        toast.error('Access forbidden. Please ensure you are logged in with proper permissions.')
+        // Redirect to login if not already there
+        if (!window.location.pathname.includes('/login')) {
+          const returnUrl = encodeURIComponent(window.location.pathname + window.location.search)
+          window.location.href = `/login?returnUrl=${returnUrl}`
+        }
         break
         
       case 404:
@@ -491,28 +495,16 @@ export const api = new ApiService()
 
 // Specific API endpoints
 export const authAPI = {
-  login: (credentials: { email: string; password: string }) =>
-    api.post<{ user: any; token: string }>('/auth/login', credentials),
-  
-  register: (userData: { name: string; email: string; password: string }) =>
-    api.post<{ user: any; token: string }>('/auth/register', userData),
-  
-  logout: () => api.post('/auth/logout'),
-  
-  refreshToken: () => api.post<{ token: string }>('/auth/refresh'),
-  
-  forgotPassword: (email: string) =>
-    api.post('/auth/forgot-password', { email }),
-  
-  resetPassword: (token: string, password: string) =>
-    api.post('/auth/reset-password', { token, password }),
-  
-  verifyEmail: (token: string) =>
-    api.post('/auth/verify-email', { token }),
-  
-  getProfile: () => api.get('/auth/profile'),
-  
-  updateProfile: (data: any) => api.patch('/auth/profile', data),
+  // Login user
+  login: (credentials: { email: string; password: string }): Promise<{ user: any; token: string; refreshToken: string }> =>
+    retryRequest(() => 
+      apiClient.post('/auth/login', credentials).then(response => response.data.data)
+    ),
+  // Register user
+  register: (userData: { name: string; email: string; password: string }): Promise<{ user: any; token: string; verificationRequired: boolean }> =>
+    retryRequest(() => 
+      apiClient.post('/auth/register', userData).then(response => response.data.data)
+    ),
 }
 
 export const projectsAPI = {
@@ -528,9 +520,10 @@ export const projectsAPI = {
   delete: (id: string) => api.delete(`/projects/${id}`),
   
   duplicate: (id: string) => api.post(`/projects/${id}/duplicate`),
-    generateContent: (id: string, wizardData: any) =>
-    api.post(`/generations/${id}/start`, { wizardData }),
-    getGenerationStatus: (generationId: string) =>
+    generateContent: (id: string, generationData: any) =>
+    api.post(`/generations/${id}/start`, generationData),
+  
+  getGenerationStatus: (generationId: string) =>
     api.get(`/generations/${generationId}/status`),
   
   export: (id: string, format: 'zip' | 'hugo') =>

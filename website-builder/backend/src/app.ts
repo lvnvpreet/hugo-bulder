@@ -253,6 +253,7 @@ if (process.env.NODE_ENV === 'development') {
 
 // API routes
 app.use('/api/auth', authRoutes);
+// Now that auth middleware supports demo users, we can enable auth for projects
 app.use('/api/projects', authMiddleware, projectRoutes);
 app.use('/api/assets', authMiddleware, assetRoutes);
 app.use('/api/reference', authMiddleware, referenceRoutes);

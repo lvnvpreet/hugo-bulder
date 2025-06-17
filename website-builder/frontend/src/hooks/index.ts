@@ -3,9 +3,6 @@ import { useAuthStore, useProjectsStore, useUIStore, useGenerationStore } from '
 import { authAPI, projectsAPI, aiAPI } from '@/services/api'
 import { toast } from 'sonner'
 
-// Export auth initialization hook
-export { useAuthInit } from './useAuthInit'
-
 // Authentication hooks
 export const useAuth = () => {
   const auth = useAuthStore()
@@ -39,15 +36,14 @@ export const useAuth = () => {
       auth.setLoading(false)
     }
   }, [auth])
-  
-  const logout = useCallback(async () => {
+    const logout = useCallback(async () => {
     try {
-      await authAPI.logout()
-    } catch (error) {
-      // Ignore logout errors
-    } finally {
+      // Logout is primarily client-side (removing stored tokens)
       auth.logout()
       toast.success('Logged out successfully')
+    } catch (error) {
+      // Ignore logout errors
+      auth.logout()
     }
   }, [auth])
   

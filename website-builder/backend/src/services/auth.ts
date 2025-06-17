@@ -20,7 +20,7 @@ export interface AuthResult {
   success: boolean;
   token?: string;
   refreshToken?: string;
-  user?: Omit<User, 'password'>;
+  user?: any; // Make it flexible to handle different user shapes
   message?: string;
   verificationRequired?: boolean;
 }
@@ -34,9 +34,8 @@ export class AuthService {
 
   /**
    * Register a new user with email verification
-   */
-  async register(userData: RegisterData): Promise<{
-    user: Omit<User, 'password'>;
+   */  async register(userData: RegisterData): Promise<{
+    user: any;
     token: string;
     verificationRequired: boolean;
   }> {
@@ -60,16 +59,13 @@ export class AuthService {
       const hashedPassword = await this.hashPassword(userData.password);
       
       // Generate verification token
-      const verificationToken = this.generateVerificationToken();
-
-      // Create user
+      const verificationToken = this.generateVerificationToken();      // Create user
       const user = await prisma.user.create({
         data: {
           email: userData.email.toLowerCase(),
           password: hashedPassword,
           name: userData.name,
           verificationToken,
-          emailVerified: false,
           plan: 'free',
           projectsLimit: 3,
           projectsUsed: 0,
@@ -114,12 +110,9 @@ export class AuthService {
           success: false,
           message: 'Invalid or expired verification token'
         };
-      }
-
-      await prisma.user.update({
+      }      await prisma.user.update({
         where: { id: user.id },
         data: {
-          emailVerified: true,
           verificationToken: null
         }
       });
@@ -139,9 +132,8 @@ export class AuthService {
 
   /**
    * Login with credential validation
-   */
-  async login(credentials: LoginData): Promise<{
-    user: Omit<User, 'password'>;
+   */  async login(credentials: LoginData): Promise<{
+    user: any;
     token: string;
     refreshToken: string;
   }> {
@@ -298,10 +290,23 @@ export class AuthService {
   /**
    * Token validation and user retrieval
    */
-  async validateToken(token: string): Promise<User | null> {
+  async validateToken(token: string): Promise<{
+    id: string;
+    email: string;
+    name: string | null;
+    avatar: string | null;
+    plan: string;
+    projectsLimit: number;
+    projectsUsed: number;
+    lastLoginAt: Date | null;
+    preferences: any;
+    createdAt: Date;
+    updatedAt: Date;
+    emailVerified?: boolean;
+  } | null> {
     try {
-      const decoded = jwt.verify(token, this.JWT_SECRET) as { userId: string };
-      
+      // Verify JWT token
+      const decoded = jwt.verify(token, this.JWT_SECRET) as { userId: string };      // Find user by ID with specific fields
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
         select: {
@@ -309,7 +314,6 @@ export class AuthService {
           email: true,
           name: true,
           avatar: true,
-          emailVerified: true,
           plan: true,
           projectsLimit: true,
           projectsUsed: true,
@@ -318,10 +322,13 @@ export class AuthService {
           createdAt: true,
           updatedAt: true,
         }
-      });
+      });      if (!user) {
+        return null;
+      }
 
-      return user as User;
+      return user;
     } catch (error) {
+      console.error('Token validation error:', error);
       return null;
     }
   }
@@ -388,13 +395,11 @@ export class AuthService {
 
       const updatedUser = await prisma.user.update({
         where: { id: userId },
-        data: sanitizedUpdates,
-        select: {
+        data: sanitizedUpdates,        select: {
           id: true,
           email: true,
           name: true,
           avatar: true,
-          emailVerified: true,
           plan: true,
           projectsLimit: true,
           projectsUsed: true,
@@ -438,8 +443,7 @@ export class AuthService {
         success: true, // Return success even on error for security
         message: 'Logout successful'
       };
-    }
-  }
+    }  }
 
   // Security utilities
   private async hashPassword(password: string): Promise<string> {

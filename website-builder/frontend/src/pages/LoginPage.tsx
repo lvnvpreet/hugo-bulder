@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { authAPI } from '@/services/api'
 
 export const LoginPage = () => {
   const [email, setEmail] = useState('')
@@ -19,46 +20,23 @@ export const LoginPage = () => {
     setIsLoading(true)
 
     try {
-      // For development - simulate a successful login
-      // In production, this would call the actual API
-      const mockUser = {
-        id: '1',
-        name: 'Demo User',
-        email: email || 'demo@example.com',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+      // Use real API call
+      const response = await authAPI.login({ email, password })
       
-      const mockToken = 'dev-token-' + Date.now()
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      login(mockUser, mockToken)
+      login(response.user, response.token)
       toast.success('Login successful!')
       
       // Redirect to wizard or wherever the user was trying to go
       const returnUrl = new URLSearchParams(window.location.search).get('returnUrl')
       navigate(returnUrl || '/wizard')
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error)
-      toast.error('Login failed. Please try again.')
+      const errorMessage = error?.response?.data?.error?.message || 'Login failed. Please check your credentials.'
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const handleDemoLogin = () => {
-    setEmail('demo@example.com')
-    setPassword('demo123')
-    // Trigger the login
-    setTimeout(() => {
-      const form = document.querySelector('form') as HTMLFormElement
-      if (form) {
-        form.requestSubmit()
-      }
-    }, 100)
   }
 
   return (
@@ -77,7 +55,7 @@ export const LoginPage = () => {
               <Input
                 id="email"
                 type="email"
-                placeholder="demo@example.com"
+                placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -95,8 +73,7 @@ export const LoginPage = () => {
                 required
               />
             </div>
-            
-            <Button 
+              <Button 
               type="submit" 
               className="w-full" 
               disabled={isLoading}
@@ -104,18 +81,15 @@ export const LoginPage = () => {
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
-          
-          <div className="mt-4 pt-4 border-t">
-            <Button 
-              variant="outline" 
-              className="w-full" 
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-            >
-              Quick Demo Login
-            </Button>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
-              Click "Quick Demo Login" to test the website builder
+            <div className="mt-4 pt-4 border-t text-center">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Don't have an account?{' '}
+              <Link 
+                to={`/register${window.location.search}`}
+                className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+              >
+                Create account
+              </Link>
             </p>
           </div>
         </CardContent>

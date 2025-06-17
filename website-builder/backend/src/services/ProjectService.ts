@@ -7,6 +7,9 @@ const prisma = new PrismaClient();
 interface ProjectData {
   name: string;
   description?: string;
+  wizardData?: any;
+  type?: string;
+  websiteType?: string;
 }
 
 interface ProjectFilters {
@@ -37,18 +40,33 @@ const STEP_NAMES = {
   10: 'review'
 } as const;
 
-export class ProjectService {
-  // Project CRUD operations
+export class ProjectService {  // Project CRUD operations
   async createProject(userId: string, projectData: ProjectData): Promise<any> {
     try {
       // Check user's project limit
-      const user = await prisma.user.findUnique({
+      let user = await prisma.user.findUnique({
         where: { id: userId },
         select: { projectsLimit: true, projectsUsed: true }
       });
 
+      // If user doesn't exist (development mode), create a temporary demo user
       if (!user) {
-        throw createNotFoundError('User');
+        if (process.env.NODE_ENV === 'development' && userId.startsWith('demo-user-')) {
+          user = await prisma.user.create({
+            data: {
+              id: userId,
+              email: `${userId}@demo.local`,
+              password: 'demo-password-hash',
+              name: 'Demo User',
+              plan: 'free',
+              projectsLimit: 10,
+              projectsUsed: 0,
+            },
+            select: { projectsLimit: true, projectsUsed: true }
+          });
+        } else {
+          throw createNotFoundError('User');
+        }
       }
 
       if (user.projectsUsed >= user.projectsLimit) {
@@ -56,9 +74,7 @@ export class ProjectService {
       }
 
       // Generate unique slug
-      const slug = await this.generateProjectSlug(projectData.name, userId);
-
-      // Create project
+      const slug = await this.generateProjectSlug(projectData.name, userId);      // Create project
       const project = await prisma.project.create({
         data: {
           name: projectData.name,
@@ -66,8 +82,10 @@ export class ProjectService {
           slug,
           generationStatus: 'DRAFT',
           userId,
-          wizardData: {},
+          wizardData: projectData.wizardData || {},
           currentStep: 1,
+          // If wizardData is provided and has all required steps, mark as completed
+          isCompleted: projectData.wizardData && this.isWizardDataComplete(projectData.wizardData),
         },
         include: {
           wizardSteps: true,
@@ -588,9 +606,39 @@ export class ProjectService {
         isValid: errors.length === 0,
         errors: errors.length > 0 ? errors : undefined,
       };
-    } catch (error) {
-      console.error('Validate wizard step error:', error);
-      throw error;
+    } catch (error) {      console.error('Validate wizard step error:', error);      throw error;
     }
+  }  /**
+   * Check if wizard data contains all required steps for completion
+   */
+  private isWizardDataComplete(wizardData: any): boolean {
+    if (!wizardData || typeof wizardData !== 'object') {
+      return false;
+    }
+
+    // Check for essential wizard data fields based on actual frontend structure
+    const hasWebsiteStructure = wizardData.websiteStructure && 
+      typeof wizardData.websiteStructure === 'object' &&
+      wizardData.websiteStructure.type && 
+      Array.isArray(wizardData.websiteStructure.selectedPages) &&
+      wizardData.websiteStructure.selectedPages.length > 0;
+
+    const hasThemeConfig = wizardData.themeConfig && 
+      typeof wizardData.themeConfig === 'object' &&
+      typeof wizardData.themeConfig.hugoTheme === 'string' &&
+      wizardData.themeConfig.hugoTheme.length > 0;
+
+    // Check if we have the minimum required data for generation
+    const hasMinimumData = hasWebsiteStructure && hasThemeConfig;
+
+    console.log('Wizard data completeness check:', {
+      hasWebsiteStructure,
+      hasThemeConfig,
+      hasMinimumData,
+      websiteStructureType: wizardData.websiteStructure?.type,
+      hugoTheme: wizardData.themeConfig?.hugoTheme
+    });
+
+    return hasMinimumData;
   }
 }

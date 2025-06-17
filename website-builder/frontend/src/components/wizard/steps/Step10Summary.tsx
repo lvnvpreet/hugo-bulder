@@ -9,12 +9,17 @@ export default function Step10Summary() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   
-  // New state variables for real API integration
+  // Supported Hugo themes (must match backend)
+  const SUPPORTED_THEMES = [
+    'ananke', 'papermod', 'business-pro', 'restaurant-deluxe', 
+    'medical-care', 'creative-studio', 'tech-startup', 'retail-store', 
+    'academic', 'mainroad', 'clarity', 'terminal'
+  ];
+    // New state variables for real API integration
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const [currentStep, setCurrentStep] = useState<string>('');
   const [generationResult, setGenerationResult] = useState<any>(null);
-  const [generationId, setGenerationId] = useState<string | null>(null);
 
   // Generate a summary of all wizard data
   const getWizardSummary = () => {
@@ -102,8 +107,7 @@ export default function Step10Summary() {
     setError(null);
     setProgress(0);
     setCurrentStep('Initializing...');
-    
-    try {
+      try {
       // STEP 1: Project Creation
       setCurrentStep('Creating project...');
       setProgress(10);
@@ -123,21 +127,30 @@ export default function Step10Summary() {
       
       // STEP 2: Start Generation
       setCurrentStep('Starting content generation...');
-      setProgress(30);
+      setProgress(30);      // Validate and get theme
+      const selectedTheme = data.themeConfig?.hugoTheme || 'business-pro';
+      const validTheme = SUPPORTED_THEMES.includes(selectedTheme) ? selectedTheme : 'business-pro';
+      
+      if (selectedTheme !== validTheme) {
+        console.warn(`Theme '${selectedTheme}' is not supported, using '${validTheme}' instead`);
+        toast.info(`Using ${validTheme} theme for generation`);
+      }
+      
+      console.log('Using Hugo theme:', validTheme);
       
       const generationResponse = await projectsAPI.generateContent(projectId, {
-        wizardData: data,
-        options: {
-          hugoTheme: data.themeConfig?.hugoTheme || 'business-pro',
-          customizations: {
-            colors: data.themeConfig?.colorScheme,
-            typography: data.themeConfig?.typography
-          }
+        hugoTheme: validTheme,
+        customizations: {
+          colors: data.themeConfig?.colorScheme,
+          fonts: data.themeConfig?.typography
+        },
+        contentOptions: {
+          tone: 'professional',
+          includeSEO: true,
+          generateSampleContent: true
         }
       });
-      
-      const newGenerationId = (generationResponse as any).generationId || (generationResponse as any).data?.generationId;
-      setGenerationId(newGenerationId);
+        const newGenerationId = (generationResponse as any).generationId || (generationResponse as any).data?.generationId;
       setProgress(40);
       setCurrentStep('Generation started, processing content...');
       
@@ -177,10 +190,16 @@ export default function Step10Summary() {
       
       // Start polling
       setTimeout(pollStatus, 2000);
-      
-    } catch (error: any) {
+        } catch (error: any) {
       console.error('Generation failed:', error);
-      setError(error.message || 'An unexpected error occurred');
+      
+      // Check if it's a theme validation error
+      if (error.response?.status === 400 && error.response?.data?.error?.message?.includes('theme')) {
+        setError('Theme validation failed. Please go back to Step 9 and select a different theme.');
+        toast.error('Invalid theme selected. Please go back to Step 9 and choose a supported theme.');
+      } else {
+        setError(error.message || 'An unexpected error occurred');
+      }
       
       // Retry logic for network errors
       if (retryCount < MAX_RETRIES && isRetryableError(error)) {
@@ -190,7 +209,9 @@ export default function Step10Summary() {
       }
       
       // Final failure
-      toast.error('Generation failed: ' + error.message);
+      if (!error.response?.data?.error?.message?.includes('theme')) {
+        toast.error('Generation failed: ' + (error.message || 'Unknown error'));
+      }
       setIsGenerating(false);
     }
   };

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { authAPI } from '@/services/api'
 
 export const RegisterPage = () => {
   const [name, setName] = useState('')
@@ -24,36 +25,35 @@ export const RegisterPage = () => {
       return
     }
     
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters')
       return
-    }
-    
+    }    
     setIsLoading(true)
 
     try {
-      // For development - simulate a successful registration
-      // In production, this would call the actual API
-      const mockUser = {
-        id: Date.now().toString(),
-        name: name,
-        email: email,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      // Use real API call
+      const response = await authAPI.register({ name, email, password })
+      
+      // Get the return URL from query params
+      const returnUrl = new URLSearchParams(window.location.search).get('returnUrl')
+      
+      if (response.verificationRequired) {
+        toast.success('Account created! Please check your email to verify your account.')
+        // Pass returnUrl to login page so user can continue after verification
+        const loginUrl = returnUrl ? `/login?returnUrl=${encodeURIComponent(returnUrl)}` : '/login?message=check-email'
+        navigate(loginUrl)
+      } else {
+        login(response.user, response.token)
+        toast.success('Account created successfully!')
+        // Redirect to the original intended destination or wizard
+        navigate(returnUrl || '/wizard')
       }
       
-      const mockToken = 'dev-token-' + Date.now()
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 800))
-      
-      login(mockUser, mockToken)
-      toast.success('Account created successfully!')
-      navigate('/wizard')
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error('Register error:', error)
-      toast.error('Registration failed. Please try again.')
+      const errorMessage = error?.response?.data?.error?.message || 'Registration failed. Please try again.'
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -95,15 +95,14 @@ export const RegisterPage = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
+              <Label htmlFor="password">Password</Label>              <Input
                 id="password"
                 type="password"
-                placeholder="Choose a password (min 6 chars)"
+                placeholder="Choose a password (min 8 chars)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
               />
             </div>
             
@@ -127,12 +126,11 @@ export const RegisterPage = () => {
               {isLoading ? 'Creating Account...' : 'Create Account'}
             </Button>
           </form>
-          
-          <div className="mt-4 pt-4 border-t text-center">
+            <div className="mt-4 pt-4 border-t text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Already have an account?{' '}
               <Link 
-                to="/login" 
+                to={`/login${window.location.search}`}
                 className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
                 Sign in

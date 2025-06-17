@@ -126,9 +126,16 @@ router.post(
   validateParams(generationSchemas.projectId),
   validate(generationSchemas.startGeneration),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const projectId = req.params.projectId!;
+    const userId = req.user.id;
+    
+    console.log('Generation request for project:', projectId, 'user:', userId);
+    console.log('Request body:', req.body);
+    
+    // Start generation process for all projects
     const generationId = await websiteGenerationService.startGeneration({
-      projectId: req.params.projectId!,
-      userId: req.user.id,
+      projectId,
+      userId,
       hugoTheme: req.body.hugoTheme,
       customizations: req.body.customizations,
       contentOptions: req.body.contentOptions,
@@ -231,21 +238,34 @@ router.post(
 router.get(
   '/:generationId/status',
   validateParams(generationSchemas.generationId),
-  validateQuery(generationSchemas.generationStatusQuery),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const result = await websiteGenerationService.getGenerationStatus(
-      req.params.generationId!,
-      req.user.id
-    );
+  validateQuery(generationSchemas.generationStatusQuery),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const generationId = req.params.generationId!;
+    
+    // Get generation status through the service
+    try {
+      const result = await websiteGenerationService.getGenerationStatus(
+        generationId,
+        req.user.id
+      );
 
-    res.json({
-      success: true,
-      data: result,
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
+      res.json({
+        success: true,
+        data: result,
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to get generation status:', error);
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'GENERATION_NOT_FOUND',
+          message: 'Generation not found or access denied'
+        }
+      });
+    }
   })
 );
 
@@ -335,11 +355,16 @@ router.get(
 // GET /generations/:generationId/download - Download generated website
 router.get(
   '/:generationId/download',
-  validateParams(generationSchemas.generationId),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  validateParams(generationSchemas.generationId),  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const generationId = req.params.generationId!;
+    const userId = req.user.id;
+    
+    console.log('Download request for generation:', generationId, 'user:', userId);
+    
+    // Regular generation download logic
     const downloadInfo = await websiteGenerationService.downloadGeneration(
-      req.params.generationId!,
-      req.user.id
+      generationId,
+      userId
     );
 
     // Set appropriate headers for file download

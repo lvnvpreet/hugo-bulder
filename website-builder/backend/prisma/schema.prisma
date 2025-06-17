@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,77 +7,220 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User authentication and management
 model User {
-  id                String    @id @default(cuid())
-  email             String    @unique
-  password          String    // bcrypt hashed
+  id                String        @id @default(cuid())
+  email             String        @unique
+  password          String
   name              String?
-  avatar            String?   // avatar URL  emailVerified     Boolean   @default(false)
+  avatar            String?
   verificationToken String?
   resetToken        String?
   resetTokenExpiry  DateTime?
-  refreshToken      String?   // hashed refresh token
-  
-  // Subscription & Usage
-  plan              String    @default("free") // free, pro, enterprise
-  projectsLimit     Int       @default(3)
-  projectsUsed      Int       @default(0)
+  refreshToken      String?
+  plan              String        @default("free")
+  projectsLimit     Int           @default(3)
+  projectsUsed      Int           @default(0)
   lastLoginAt       DateTime?
-  
-  // Preferences
-  preferences       Json?     // UI preferences, default settings
-  
-  // Relationships
-  projects          Project[]
+  preferences       Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
   uploads           AssetUpload[]
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  projects          Project[]
+
   @@map("users")
 }
 
-// Main project entity with wizard data
 model Project {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Project Details
-  name              String
-  slug              String    @unique
-  description       String?
-  
-  // Wizard Data (Complete 10-step data)
-  wizardData        Json      // Complete wizard responses
-  currentStep       Int       @default(1)
-  isCompleted       Boolean   @default(false)
-  
-  // Generation Status
-  generationStatus  GenerationStatus @default(DRAFT)
-  lastGeneratedAt   DateTime?
-  
-  // Hugo Site Data
-  selectedTheme     String?
-  themeCustomization Json?   // Colors, fonts, customizations
-  hugoSiteUrl       String?  // Download URL for generated site
-  
-  // SEO & Meta
-  metaTitle         String?
-  metaDescription   String?
-  keywords          String[]
-  
-  // Relationships
-  wizardSteps       WizardStep[]
-  generatedContent  GeneratedContent[]
-  siteGenerations   SiteGeneration[]
-  uploads           AssetUpload[]
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+  id                 String             @id @default(cuid())
+  userId             String
+  name               String
+  slug               String             @unique
+  description        String?
+  wizardData         Json
+  currentStep        Int                @default(1)
+  isCompleted        Boolean            @default(false)
+  generationStatus   GenerationStatus   @default(DRAFT)
+  lastGeneratedAt    DateTime?
+  selectedTheme      String?
+  themeCustomization Json?
+  hugoSiteUrl        String?
+  metaTitle          String?
+  metaDescription    String?
+  keywords           String[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  uploads            AssetUpload[]
+  generatedContent   GeneratedContent[]
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  siteGenerations    SiteGeneration[]
+  wizardSteps        WizardStep[]
+
   @@map("projects")
+}
+
+model WizardStep {
+  id          String    @id @default(cuid())
+  projectId   String
+  stepNumber  Int
+  stepName    String
+  isCompleted Boolean   @default(false)
+  stepData    Json
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, stepNumber])
+  @@map("wizard_steps")
+}
+
+model BusinessCategory {
+  id           String            @id @default(cuid())
+  name         String            @unique
+  displayName  String
+  description  String?
+  icon         String?
+  industry     String?
+  isActive     Boolean           @default(true)
+  projectCount Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  services     ServiceTemplate[]
+
+  @@map("business_categories")
+}
+
+model ServiceTemplate {
+  id                 String           @id @default(cuid())
+  businessCategoryId String
+  name               String
+  description        String
+  features           String[]
+  isPopular          Boolean          @default(false)
+  sortOrder          Int              @default(0)
+  contentKeywords    String[]
+  defaultPricing     String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  businessCategory   BusinessCategory @relation(fields: [businessCategoryId], references: [id], onDelete: Cascade)
+
+  @@map("service_templates")
+}
+
+model WebsiteStructure {
+  id              String        @id @default(cuid())
+  name            String        @unique
+  displayName     String
+  description     String?
+  type            StructureType
+  defaultSections String[]
+  defaultPages    String[]
+  suitableFor     String[]
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("website_structures")
+}
+
+model HugoTheme {
+  id               String    @id @default(cuid())
+  themeId          String    @unique
+  name             String
+  displayName      String
+  description      String
+  category         String
+  githubUrl        String
+  demoUrl          String?
+  documentationUrl String?
+  license          String    @default("MIT")
+  version          String?
+  lastUpdated      DateTime?
+  suitableFor      String[]
+  structureTypes   String[]
+  features         String[]
+  colorSchemes     Json?
+  fontOptions      Json?
+  configOptions    Json?
+  downloadCount    Int       @default(0)
+  popularityScore  Int       @default(0)
+  isActive         Boolean   @default(true)
+  isFeatured       Boolean   @default(false)
+  screenshots      String[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("hugo_themes")
+}
+
+model GeneratedContent {
+  id          String   @id @default(cuid())
+  projectId   String
+  contentType String
+  contentKey  String
+  title       String?
+  content     String
+  metadata    Json?
+  aiModel     String
+  prompt      String?
+  tokens      Int?
+  version     Int      @default(1)
+  isActive    Boolean  @default(true)
+  wordCount   Int?
+  readingTime Int?
+  seoScore    Int?
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, contentType, contentKey, version])
+  @@map("generated_content")
+}
+
+model SiteGeneration {
+  id               String               @id @default(cuid())
+  projectId        String
+  status           SiteGenerationStatus @default(PENDING)
+  hugoTheme        String
+  buildLog         String?
+  errorLog         String?
+  siteUrl          String?
+  fileSize         Int?
+  fileCount        Int?
+  generationTime   Int?
+  aiProcessingTime Int?
+  hugoBuildTime    Int?
+  hugoVersion      String?
+  nodeVersion      String?
+  startedAt        DateTime             @default(now())
+  completedAt      DateTime?
+  expiresAt        DateTime?
+  project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("site_generations")
+}
+
+model AssetUpload {
+  id           String    @id @default(cuid())
+  userId       String
+  projectId    String?
+  filename     String
+  originalName String
+  mimeType     String
+  fileSize     Int
+  filePath     String
+  assetType    AssetType
+  usage        String?
+  dimensions   Json?
+  alt          String?
+  caption      String?
+  isProcessed  Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  uploadedAt   DateTime  @default(now())
+  project      Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("asset_uploads")
 }
 
 enum GenerationStatus {
@@ -91,206 +231,9 @@ enum GenerationStatus {
   ARCHIVED
 }
 
-// Individual wizard step completions
-model WizardStep {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  stepNumber  Int      // 1-10 for each wizard step
-  stepName    String   // "website-type", "business-category", etc.
-  isCompleted Boolean  @default(false)
-  stepData    Json     // Step-specific data
-  
-  completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@unique([projectId, stepNumber])
-  @@map("wizard_steps")
-}
-
-// Available business categories
-model BusinessCategory {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  displayName String
-  description String?
-  icon        String?   // Icon name or URL
-  industry    String?   // Technology, Healthcare, etc.
-  isActive    Boolean  @default(true)
-  
-  // Default services for this category
-  services    ServiceTemplate[]
-  
-  // Usage tracking
-  projectCount Int     @default(0)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@map("business_categories")
-}
-
-// Service templates per business category
-model ServiceTemplate {
-  id                 String   @id @default(cuid())
-  businessCategoryId String
-  businessCategory   BusinessCategory @relation(fields: [businessCategoryId], references: [id], onDelete: Cascade)
-  
-  name               String
-  description        String
-  features           String[] // List of service features
-  isPopular          Boolean  @default(false)
-  sortOrder          Int      @default(0)
-  
-  // Content generation hints
-  contentKeywords    String[] // Keywords for AI content generation
-  defaultPricing     String?  // "Contact for pricing", "$99/month", etc.
-  
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  
-  @@map("service_templates")
-}
-
-// Page/section configurations
-model WebsiteStructure {
-  id          String   @id @default(cuid())
-  name        String   @unique // "single-page", "multi-page-business", etc.
-  displayName String
-  description String?
-  type        StructureType
-  
-  // Default sections/pages
-  defaultSections String[] // For single-page: ["hero", "about", "services"]
-  defaultPages    String[] // For multi-page: ["home", "about", "services", "contact"]
-  
-  // Suitable for
-  suitableFor String[] // ["business", "portfolio", "blog"]
-  
-  isActive    Boolean  @default(true)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@map("website_structures")
-}
-
 enum StructureType {
   SINGLE_PAGE
   MULTI_PAGE
-}
-
-// Available Hugo themes
-model HugoTheme {
-  id           String   @id @default(cuid())
-  themeId      String   @unique // "papermod", "ananke", etc.
-  name         String
-  displayName  String
-  description  String
-  category     String   // "blog", "business", "portfolio"
-  
-  // Theme Details
-  githubUrl    String
-  demoUrl      String?
-  documentationUrl String?
-  license      String   @default("MIT")
-  version      String?
-  lastUpdated  DateTime?
-  
-  // Compatibility
-  suitableFor  String[] // ["business", "blog", "portfolio"]
-  structureTypes String[] // ["single-page", "multi-page"]
-  features     String[] // ["dark-mode", "search", "comments"]
-  
-  // Configuration Options
-  colorSchemes Json?    // Available color options
-  fontOptions  Json?    // Available font options
-  configOptions Json?   // Theme-specific settings
-  
-  // Usage & Stats
-  downloadCount Int     @default(0)
-  popularityScore Int   @default(0)
-  isActive     Boolean  @default(true)
-  isFeatured   Boolean  @default(false)
-  
-  // Screenshots
-  screenshots  String[] // Array of image URLs
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  @@map("hugo_themes")
-}
-
-// AI-generated content storage
-model GeneratedContent {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  // Content Identification
-  contentType String   // "homepage", "about", "service", "blog-post"
-  contentKey  String   // Unique key for content piece
-  title       String?
-  
-  // AI Generated Content
-  content     String   // Markdown content
-  metadata    Json?    // SEO metadata, front matter
-  
-  // Generation Details
-  aiModel     String   // "llama3", "mistral", etc.
-  prompt      String?  // Original prompt used
-  tokens      Int?     // Token count
-  
-  // Version Control
-  version     Int      @default(1)
-  isActive    Boolean  @default(true)
-  
-  // Quality Metrics
-  wordCount   Int?
-  readingTime Int?     // Estimated reading time in minutes
-  seoScore    Int?     // SEO optimization score
-  
-  generatedAt DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@unique([projectId, contentType, contentKey, version])
-  @@map("generated_content")
-}
-
-// Hugo site generation tracking
-model SiteGeneration {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  // Generation Details
-  status      SiteGenerationStatus @default(PENDING)
-  hugoTheme   String
-  buildLog    String?  // Hugo build output
-  errorLog    String?  // Error messages if failed
-  
-  // Generated Files
-  siteUrl     String?  // Download URL
-  fileSize    Int?     // ZIP file size in bytes
-  fileCount   Int?     // Number of files generated
-  
-  // Performance Metrics
-  generationTime Int?  // Time taken in milliseconds
-  aiProcessingTime Int? // AI content generation time
-  hugoBuildTime Int?   // Hugo build time
-  
-  // Metadata
-  hugoVersion String?
-  nodeVersion String?
-  
-  startedAt   DateTime @default(now())
-  completedAt DateTime?
-  expiresAt   DateTime? // When the download link expires
-  
-  @@map("site_generations")
 }
 
 enum SiteGenerationStatus {
@@ -301,39 +244,6 @@ enum SiteGenerationStatus {
   COMPLETED
   FAILED
   EXPIRED
-}
-
-// File upload and asset management
-model AssetUpload {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  // File Details
-  filename    String
-  originalName String
-  mimeType    String
-  fileSize    Int      // Size in bytes
-  filePath    String   // Storage path
-  
-  // File Type
-  assetType   AssetType
-  usage       String?  // "logo", "hero-image", "gallery", etc.
-  
-  // Metadata
-  dimensions  Json?    // For images: {width, height}
-  alt         String?  // Alt text for images
-  caption     String?
-  
-  // Status
-  isProcessed Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  
-  uploadedAt  DateTime @default(now())
-  
-  @@map("asset_uploads")
 }
 
 enum AssetType {
