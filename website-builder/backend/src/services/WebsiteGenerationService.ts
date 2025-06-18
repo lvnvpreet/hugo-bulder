@@ -11,13 +11,14 @@ import {
   validateGenerationOptions,
   GenerationValidationError
 } from '../types/generation';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import archiver from 'archiver';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as yaml from 'js-yaml';
+import axios from 'axios';
 
 const execAsync = promisify(exec);
 
@@ -68,22 +69,32 @@ interface GenerationResult {
   errors?: string[];
 }
 
+interface AIContentResponse {
+  pages: Record<string, {
+    title: string;
+    content: string;
+    meta_description: string;
+    keywords?: string[];
+  }>;
+  seo_data?: any;
+}
+
 export class WebsiteGenerationService {
   private prisma: PrismaClient;
   private outputDir: string;
   private themeDetection: ThemeDetectionService;
+  private aiEngineUrl: string;
 
   constructor() {
-    // Fix: Ensure prisma is properly initialized
     this.prisma = db;
     
-    // Add safety check to ensure db is available
     if (!this.prisma) {
       throw new Error('Database connection not available. Make sure database is properly configured.');
     }
 
     this.outputDir = path.join(process.cwd(), 'generated-sites');
     this.themeDetection = new ThemeDetectionService();
+    this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8000';
     
     // Ensure output directory exists
     fs.ensureDirSync(this.outputDir);
@@ -108,7 +119,6 @@ export class WebsiteGenerationService {
         );
       }
 
-      // Add null check for prisma
       if (!this.prisma) {
         throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
       }
@@ -130,7 +140,6 @@ export class WebsiteGenerationService {
         throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
       }
 
-      // Check if project is completed (has all required wizard data)
       if (!project.isCompleted) {
         throw new AppError('Project must be completed before generation', 400, 'PROJECT_NOT_COMPLETED');
       }
@@ -158,7 +167,7 @@ export class WebsiteGenerationService {
       }
 
       // Determine Hugo theme
-      let finalTheme = hugoTheme || 'ananke'; // Default fallback theme
+      let finalTheme = hugoTheme || 'ananke';
       
       if (options.autoDetectTheme || !hugoTheme) {
         try {
@@ -170,11 +179,10 @@ export class WebsiteGenerationService {
           }
         } catch (themeError) {
           console.warn('⚠️ Theme detection failed, using fallback:', themeError);
-          // Continue with default theme
         }
       }
 
-      // Create generation record with all new fields
+      // Create generation record
       const generationId = uuidv4();
       const generation = await this.prisma.siteGeneration.create({
         data: {
@@ -239,7 +247,7 @@ export class WebsiteGenerationService {
   }
 
   /**
-   * Process generation asynchronously
+   * REAL IMPLEMENTATION - Process generation with actual Hugo site building
    */
   private async processGeneration(
     generationId: string,
@@ -251,76 +259,115 @@ export class WebsiteGenerationService {
     }
   ): Promise<void> {
     const startTime = Date.now();
+    let siteDir = '';
+    let generatedContent: AIContentResponse | null = null;
 
     try {
-      // Step 1: Initialize
+      // Step 1: Initialize Hugo environment
       await this.updateGenerationProgress(generationId, {
-        step: 'Initializing generation environment...',
+        step: 'Initializing Hugo environment...',
         progress: 5,
-        message: 'Setting up generation workspace',
+        message: 'Checking Hugo CLI and setting up workspace',
       });
       await this.updateStatus(generationId, SiteGenerationStatus.INITIALIZING);
+
+      // Check Hugo installation
+      await this.checkHugoInstallation();
+      console.log('✅ Hugo CLI verified');
 
       // Step 2: Analyze project data
       await this.updateGenerationProgress(generationId, {
         step: 'Analyzing project data...',
         progress: 15,
-        message: 'Processing wizard configuration',
+        message: 'Processing wizard configuration and business data',
       });
+      
+      const projectData = this.parseProjectData(project);
+      console.log(`📊 Processed project data for: ${projectData.businessName}`);
 
-      // Step 3: Generate content
+      // Step 3: Generate AI content
       await this.updateGenerationProgress(generationId, {
-        step: 'Generating website content...',
+        step: 'Generating AI content...',
         progress: 35,
-        message: 'Creating pages and content',
+        message: 'Creating website content with AI',
       });
       await this.updateStatus(generationId, SiteGenerationStatus.GENERATING_CONTENT);
 
-      // Simulate content generation
-      await this.sleep(2000);
+      generatedContent = await this.generateAIContent(projectData, options.contentOptions);
+      const pageCount = Object.keys(generatedContent?.pages || {}).length;
+      console.log(`🤖 Generated ${pageCount} pages with AI`);
 
-      // Step 4: Apply theme
+      // Step 4: Create Hugo site structure
       await this.updateGenerationProgress(generationId, {
-        step: 'Applying theme and customizations...',
-        progress: 55,
-        message: 'Configuring design and layout',
+        step: 'Creating Hugo site structure...',
+        progress: 50,
+        message: 'Setting up Hugo site files and directories',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.BUILDING_STRUCTURE);
+
+      siteDir = await this.createHugoSite(project.slug || project.id);
+      console.log(`📁 Created Hugo site at: ${siteDir}`);
+
+      // Step 5: Install and configure theme
+      await this.updateGenerationProgress(generationId, {
+        step: 'Installing Hugo theme...',
+        progress: 60,
+        message: `Installing ${options.hugoTheme} theme`,
       });
       await this.updateStatus(generationId, SiteGenerationStatus.APPLYING_THEME);
 
-      // Step 5: Build site
+      await this.installHugoTheme(siteDir, options.hugoTheme);
+      console.log(`🎨 Theme ${options.hugoTheme} installed successfully`);
+
+      // Step 6: Generate site configuration
+      await this.updateGenerationProgress(generationId, {
+        step: 'Generating site configuration...',
+        progress: 70,
+        message: 'Creating Hugo config files',
+      });
+
+      await this.generateHugoConfig(siteDir, projectData, options);
+      console.log('⚙️ Hugo configuration generated');
+
+      // Step 7: Create content files
+      await this.updateGenerationProgress(generationId, {
+        step: 'Creating content files...',
+        progress: 80,
+        message: 'Writing content to Hugo markdown files',
+      });
+
+      const contentFileCount = await this.createContentFiles(siteDir, generatedContent, projectData);
+      console.log(`📝 Created ${contentFileCount} content files`);
+
+      // Step 8: Build Hugo site
       await this.updateGenerationProgress(generationId, {
         step: 'Building Hugo site...',
-        progress: 75,
-        message: 'Compiling static website',
+        progress: 85,
+        message: 'Compiling static website with Hugo',
       });
       await this.updateStatus(generationId, SiteGenerationStatus.BUILDING_SITE);
 
-      // Simulate Hugo build
-      await this.sleep(2000);
+      await this.buildHugoSite(siteDir);
+      console.log('🔨 Hugo site built successfully');
 
-      // Step 6: Package
+      // Step 9: Package website
       await this.updateGenerationProgress(generationId, {
         step: 'Packaging website...',
-        progress: 90,
-        message: 'Creating downloadable archive',
+        progress: 95,
+        message: 'Creating downloadable ZIP archive',
       });
       await this.updateStatus(generationId, SiteGenerationStatus.PACKAGING);
 
-      // Create mock download file
-      const fileName = `${project.slug}-website-${Date.now()}.zip`;
-      const filePath = path.join(this.outputDir, fileName);
-      
-      // Create a simple mock zip file
-      await fs.writeFile(filePath, 'Mock website content');
-      const stats = await fs.stat(filePath);
+      const packageResult = await this.packageWebsite(siteDir, project.slug || project.id);
+      console.log(`📦 Package created: ${packageResult.fileName} (${this.formatFileSize(packageResult.fileSize)})`);
 
-      // Step 7: Complete
+      // Step 10: Complete generation
       const generationTime = Date.now() - startTime;
       
       await this.completeGeneration(generationId, {
-        siteUrl: fileName,
-        fileSize: stats.size,
-        fileCount: 25, // Mock file count
+        siteUrl: packageResult.fileName,
+        fileSize: packageResult.fileSize,
+        fileCount: packageResult.fileCount,
         generationTime,
       });
 
@@ -330,13 +377,359 @@ export class WebsiteGenerationService {
         message: 'Website is ready for download',
       });
 
-      console.log(`🎉 Generation ${generationId} completed in ${generationTime}ms`);
+      console.log(`🎉 Real Hugo site generated successfully in ${generationTime}ms`);
+
+      // Cleanup temporary files
+      await this.cleanupTempFiles(siteDir);
 
     } catch (error) {
       console.error(`❌ Generation ${generationId} failed:`, error);
+      
+      // Cleanup on error
+      if (siteDir) {
+        await this.cleanupTempFiles(siteDir);
+      }
+      
       await this.failGeneration(generationId, error instanceof Error ? error.message : String(error));
     }
   }
+
+  /**
+   * Check if Hugo CLI is installed and accessible
+   */
+  private async checkHugoInstallation(): Promise<void> {
+    try {
+      const { stdout } = await execAsync('hugo version');
+      console.log(`✅ Hugo CLI found: ${stdout.trim()}`);
+    } catch (error) {
+      throw new Error('Hugo CLI not found. Please install Hugo: https://gohugo.io/installation/');
+    }
+  }
+
+  /**
+   * Parse and structure project data from wizard steps
+   */
+  private parseProjectData(project: Project & { wizardSteps: any[] }): any {
+    const wizardData = project.wizardData || {};
+    
+    return {
+      businessName: wizardData.businessInfo?.name || project.name,
+      businessType: wizardData.businessInfo?.type || 'business',
+      description: wizardData.businessInfo?.description || project.description,
+      industry: wizardData.businessInfo?.industry,
+      target_audience: wizardData.targetAudience,
+      location: wizardData.businessInfo?.location,
+      contact: wizardData.contactInfo,
+      features: wizardData.features || [],
+      pages: wizardData.pages || ['home', 'about', 'services', 'contact'],
+      seo: wizardData.seo || {},
+      branding: wizardData.branding || {}
+    };
+  }
+
+  /**
+   * Generate content using AI service
+   */
+  private async generateAIContent(projectData: any, contentOptions: any): Promise<AIContentResponse> {
+    try {
+      console.log('🤖 Calling AI service for content generation...');
+      
+      const response = await axios.post(`${this.aiEngineUrl}/api/v1/content/generate-content`, {
+        business_name: projectData.businessName,
+        business_type: projectData.businessType,
+        industry: projectData.industry,
+        description: projectData.description,
+        target_audience: projectData.target_audience,
+        pages: projectData.pages,
+        tone: contentOptions?.tone || 'professional',
+        length: contentOptions?.length || 'medium',
+        include_seo: contentOptions?.includeSEO || true
+      }, {
+        timeout: 30000 // 30 seconds timeout
+      });
+
+      console.log('✅ AI content generated successfully');
+      return response.data;
+    } catch (error) {
+      console.warn('⚠️ AI content generation failed, using fallback content:', error);
+      
+      // Fallback content generation
+      return this.generateFallbackContent(projectData);
+    }
+  }
+
+  /**
+   * Generate fallback content if AI service is unavailable
+   */
+  private generateFallbackContent(projectData: any): AIContentResponse {
+    console.log('📝 Generating fallback content...');
+    
+    return {
+      pages: {
+        home: {
+          title: `Welcome to ${projectData.businessName}`,
+          content: `# Welcome to ${projectData.businessName}\n\n${projectData.description || 'Your business description here.'}\n\n## Our Services\n\nWe provide excellent services to help you succeed.\n\n## Why Choose Us\n\n- Professional service\n- Experienced team\n- Customer satisfaction\n\n[Contact us today](#contact) to learn more!`,
+          meta_description: `${projectData.businessName} - ${projectData.description?.slice(0, 150) || 'Professional services'}`
+        },
+        about: {
+          title: `About ${projectData.businessName}`,
+          content: `# About Us\n\n${projectData.description || 'Learn more about our company and mission.'}\n\n## Our Mission\n\nWe are committed to providing excellent service to our customers and helping them achieve their goals.\n\n## Our Values\n\n- **Quality**: We deliver high-quality solutions\n- **Innovation**: We embrace new technologies and methods\n- **Integrity**: We conduct business with honesty and transparency\n- **Customer Focus**: Your success is our priority`,
+          meta_description: `Learn more about ${projectData.businessName} and our mission`
+        },
+        services: {
+          title: 'Our Services',
+          content: `# Our Services\n\nWe offer a wide range of professional services to meet your needs.\n\n## Service Categories\n\n### Professional Consulting\nExpert advice and guidance for your business needs.\n\n### Expert Solutions\nTailored solutions designed specifically for your requirements.\n\n### Customer Support\nOngoing support to ensure your continued success.\n\n## Get Started\n\nContact us today to discuss how we can help your business grow.`,
+          meta_description: `Professional services offered by ${projectData.businessName}`
+        },
+        contact: {
+          title: 'Contact Us',
+          content: `# Contact ${projectData.businessName}\n\nGet in touch with us today!\n\n## Contact Information\n\n- **Email:** ${projectData.contact?.email || 'contact@example.com'}\n- **Phone:** ${projectData.contact?.phone || '(555) 123-4567'}\n- **Address:** ${projectData.location || 'Your Address Here'}\n\n## Business Hours\n\n- Monday - Friday: 9:00 AM - 5:00 PM\n- Saturday: 10:00 AM - 2:00 PM\n- Sunday: Closed\n\n## Get In Touch\n\nWe'd love to hear from you. Send us a message and we'll respond as soon as possible.`,
+          meta_description: `Contact ${projectData.businessName} for more information`
+        }
+      }
+    };
+  }
+
+  /**
+   * Create new Hugo site
+   */
+  private async createHugoSite(siteName: string): Promise<string> {
+    const siteDir = path.join(this.outputDir, `${siteName}-${Date.now()}`);
+    
+    try {
+      await execAsync(`hugo new site "${siteDir}"`);
+      console.log(`📁 Hugo site created: ${siteDir}`);
+      return siteDir;
+    } catch (error) {
+      throw new Error(`Failed to create Hugo site: ${error}`);
+    }
+  }
+
+  /**
+   * Install Hugo theme
+   */
+  private async installHugoTheme(siteDir: string, themeName: string): Promise<void> {
+    const themesDir = path.join(siteDir, 'themes');
+    const themeDir = path.join(themesDir, themeName);
+    
+    try {
+      await fs.ensureDir(themesDir);
+      
+      // Theme repository URLs
+      const themeRepos: Record<string, string> = {
+        'ananke': 'https://github.com/theNewDynamic/gohugo-theme-ananke.git',
+        'papermod': 'https://github.com/adityatelange/hugo-PaperMod.git',
+        'bigspring': 'https://github.com/themefisher/bigspring-hugo.git',
+        'restaurant': 'https://github.com/themefisher/restaurant-hugo.git',
+        'hargo': 'https://github.com/themefisher/hargo.git',
+        'terminal': 'https://github.com/panr/hugo-theme-terminal.git',
+        'clarity': 'https://github.com/chipzoller/hugo-clarity.git',
+        'mainroad': 'https://github.com/vimux/mainroad.git'
+      };
+
+      const repoUrl = themeRepos[themeName] || themeRepos['ananke'];
+      
+      // Clone theme with shallow clone for faster download
+      await execAsync(`git clone --depth 1 "${repoUrl}" "${themeDir}"`);
+      
+      // Remove .git directory to avoid issues
+      const gitDir = path.join(themeDir, '.git');
+      if (await fs.pathExists(gitDir)) {
+        await fs.remove(gitDir);
+      }
+      
+      console.log(`🎨 Theme ${themeName} installed successfully`);
+    } catch (error) {
+      throw new Error(`Failed to install theme ${themeName}: ${error}`);
+    }
+  }
+
+  /**
+   * Generate Hugo configuration file
+   */
+  private async generateHugoConfig(siteDir: string, projectData: any, options: any): Promise<void> {
+    const config = {
+      baseURL: 'https://example.com',
+      languageCode: 'en-us',
+      title: projectData.businessName,
+      theme: options.hugoTheme,
+      
+      params: {
+        description: projectData.description || `${projectData.businessName} - Professional services`,
+        author: projectData.businessName,
+        email: projectData.contact?.email || '',
+        phone: projectData.contact?.phone || '',
+        address: projectData.location || '',
+        
+        // Apply customizations
+        ...(options.customizations?.colors && {
+          colors: options.customizations.colors
+        }),
+        ...(options.customizations?.fonts && {
+          fonts: options.customizations.fonts
+        })
+      },
+
+      menu: {
+        main: [
+          { name: 'Home', url: '/', weight: 1 },
+          { name: 'About', url: '/about/', weight: 2 },
+          { name: 'Services', url: '/services/', weight: 3 },
+          { name: 'Contact', url: '/contact/', weight: 4 }
+        ]
+      },
+
+      markup: {
+        goldmark: {
+          renderer: {
+            unsafe: true
+          }
+        }
+      },
+
+      // SEO settings
+      enableRobotsTXT: true,
+      canonifyURLs: true,
+      
+      // Performance settings
+      minify: {
+        disableXML: true,
+        minifyOutput: true
+      }
+    };
+
+    const configPath = path.join(siteDir, 'hugo.yaml');
+    await fs.writeFile(configPath, yaml.dump(config), 'utf-8');
+    console.log(`⚙️ Hugo configuration written to ${configPath}`);
+  }
+
+  /**
+   * Create content files from generated content
+   */
+  private async createContentFiles(siteDir: string, generatedContent: AIContentResponse | null, projectData: any): Promise<number> {
+    const contentDir = path.join(siteDir, 'content');
+    await fs.ensureDir(contentDir);
+
+    const pages = generatedContent?.pages || {};
+    let fileCount = 0;
+    
+    for (const [pageName, pageData] of Object.entries(pages)) {
+      const frontmatter = {
+        title: pageData.title,
+        date: new Date().toISOString(),
+        draft: false,
+        description: pageData.meta_description || '',
+        keywords: pageData.keywords || [],
+        type: pageName === 'home' ? 'page' : 'page'
+      };
+
+      const content = `---\n${yaml.dump(frontmatter)}---\n\n${pageData.content}`;
+      
+      const filePath = pageName === 'home' 
+        ? path.join(contentDir, '_index.md')
+        : path.join(contentDir, `${pageName}.md`);
+      
+      await fs.writeFile(filePath, content, 'utf-8');
+      console.log(`📝 Created content file: ${path.basename(filePath)}`);
+      fileCount++;
+    }
+
+    return fileCount;
+  }
+
+  /**
+   * Build Hugo site
+   */
+  private async buildHugoSite(siteDir: string): Promise<void> {
+    try {
+      const { stdout, stderr } = await execAsync('hugo --minify', { 
+        cwd: siteDir,
+        timeout: 30000 // 30 seconds timeout
+      });
+      
+      console.log(`🔨 Hugo build completed`);
+      
+      if (stderr && !stderr.includes('WARN')) {
+        console.warn(`⚠️ Hugo build warnings: ${stderr}`);
+      }
+      
+      // Verify public directory was created
+      const publicDir = path.join(siteDir, 'public');
+      if (!(await fs.pathExists(publicDir))) {
+        throw new Error('Hugo build did not create public directory');
+      }
+      
+    } catch (error) {
+      throw new Error(`Hugo build failed: ${error}`);
+    }
+  }
+
+  /**
+   * Package website into ZIP file
+   */
+  private async packageWebsite(siteDir: string, projectName: string): Promise<{
+    fileName: string;
+    fileSize: number;
+    fileCount: number;
+  }> {
+    const publicDir = path.join(siteDir, 'public');
+    const fileName = `${projectName}-website-${Date.now()}.zip`;
+    const zipPath = path.join(this.outputDir, fileName);
+
+    return new Promise((resolve, reject) => {
+      const output = fs.createWriteStream(zipPath);
+      const archive = archiver('zip', { 
+        zlib: { level: 9 }, // Maximum compression
+        store: true // Use store method for already compressed files
+      });
+
+      let fileCount = 0;
+
+      output.on('close', () => {
+        const fileSize = archive.pointer();
+        console.log(`📦 Package created: ${fileName} (${this.formatFileSize(fileSize)}, ${fileCount} files)`);
+        resolve({ fileName, fileSize, fileCount });
+      });
+
+      archive.on('error', (err) => {
+        reject(new Error(`Packaging failed: ${err.message}`));
+      });
+
+      archive.on('entry', () => {
+        fileCount++;
+      });
+
+      archive.pipe(output);
+      archive.directory(publicDir, false);
+      archive.finalize();
+    });
+  }
+
+  /**
+   * Cleanup temporary files
+   */
+  private async cleanupTempFiles(siteDir: string): Promise<void> {
+    try {
+      if (await fs.pathExists(siteDir)) {
+        await fs.remove(siteDir);
+        console.log(`🗑️ Cleaned up temporary files: ${path.basename(siteDir)}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to cleanup temp files: ${error}`);
+    }
+  }
+
+  /**
+   * Format file size for display
+   */
+  private formatFileSize(bytes: number): string {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    if (bytes === 0) return '0 Bytes';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  // ... Keep all existing methods below (updateGenerationProgress, completeGeneration, etc.)
 
   /**
    * Update generation progress
