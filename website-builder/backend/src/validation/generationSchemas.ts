@@ -2,23 +2,68 @@ import Joi from 'joi';
 
 // Schema for starting website generation
 export const startGenerationSchema = Joi.object({
-  hugoTheme: Joi.string().optional(),
-  customizations: Joi.object().optional(),
-  contentOptions: Joi.object().optional(),
-  autoDetectTheme: Joi.boolean().optional(),
-}).unknown(true); // Allow any additional fields
+  hugoTheme: Joi.string().valid(
+    'ananke',
+    'papermod', 
+    'bigspring',
+    'restaurant',
+    'hargo',
+    'terminal',
+    'clarity',
+    'mainroad'
+  ).optional(),
+  autoDetectTheme: Joi.boolean().default(false),
+  customizations: Joi.object({
+    colors: Joi.object({
+      name: Joi.string().optional(), // This is just a text label, not a hex color
+      primary: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+      secondary: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+      accent: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+      background: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+      text: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+    }).optional(),
+    fonts: Joi.object({
+      headingFont: Joi.string().optional(),
+      bodyFont: Joi.string().optional(),
+      fontSize: Joi.string().valid('small', 'medium', 'large').optional(),
+    }).optional(),
+    layout: Joi.object({
+      headerStyle: Joi.string().valid('standard', 'minimal', 'bold').optional(),
+      footerStyle: Joi.string().valid('standard', 'minimal', 'detailed').optional(),
+      sidebarEnabled: Joi.boolean().optional(),
+    }).optional(),
+  }).optional(),
+  contentOptions: Joi.object({
+    generateSampleContent: Joi.boolean().default(true),
+    contentTone: Joi.string().valid(
+      'professional',
+      'casual',
+      'friendly',
+      'formal',
+      'creative',
+      'authoritative',
+      'conversational',
+      'technical'
+    ).default('professional'),
+    includeImages: Joi.boolean().default(true),
+    seoOptimized: Joi.boolean().default(true),
+    aiModel: Joi.string().valid('gpt-4', 'gpt-3.5-turbo', 'llama3', 'mistral').optional(),
+    length: Joi.string().valid('short', 'medium', 'long').default('medium'),
+  }).optional(),
+}).unknown(false); // Don't allow unknown fields
 
 // Schema for generation status query parameters
 export const generationStatusQuerySchema = Joi.object({
   include: Joi.string().valid('project', 'logs', 'metrics').optional(),
 });
 
-// Schema for generation history query parameters
-export const generationHistoryQuerySchema = Joi.object({
+// Schema for generation history query parameters (renamed from generationHistoryQuerySchema)
+export const getHistorySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  pageSize: Joi.number().integer().min(1).max(100).default(10),
+  pageSize: Joi.number().integer().min(1).max(50).default(10),
   status: Joi.string().valid(
     'PENDING',
+    'PROCESSING',
     'GENERATING_CONTENT',
     'BUILDING_SITE',
     'PACKAGING',
@@ -54,7 +99,16 @@ export const projectIdSchema = Joi.object({
 // Schema for bulk operations
 export const bulkGenerationSchema = Joi.object({
   projectIds: Joi.array().items(Joi.string()).min(1).max(10).required(),
-  hugoTheme: Joi.string().required(),
+  hugoTheme: Joi.string().valid(
+    'ananke',
+    'papermod',
+    'bigspring',
+    'restaurant',
+    'hargo',
+    'terminal',
+    'clarity',
+    'mainroad'
+  ).required(),
   customizations: Joi.object({
     colors: Joi.object().pattern(Joi.string(), Joi.string().pattern(/^#[0-9a-fA-F]{6}$/)).optional(),
     fonts: Joi.object().pattern(Joi.string(), Joi.string()).optional(),
@@ -90,10 +144,11 @@ export const detectThemeParamSchema = Joi.object({
   }),
 });
 
+// Export all schemas with consistent naming
 export const generationSchemas = {
   startGeneration: startGenerationSchema,
   generationStatusQuery: generationStatusQuerySchema,
-  generationHistory: generationHistoryQuerySchema,
+  getHistory: getHistorySchema, // This was missing and causing the error
   generationId: generationIdSchema,
   projectId: projectIdSchema,
   detectThemeParam: detectThemeParamSchema,

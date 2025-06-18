@@ -8,8 +8,7 @@ export interface GenerationStep {
   progress: number;
   startTime?: Date;
   endTime?: Date;
-  duration?: number;
-  details?: Record<string, any>;
+  error?: string;
 }
 
 export interface GenerationWebhook {
@@ -19,87 +18,19 @@ export interface GenerationWebhook {
 }
 
 export interface GenerationMetrics {
-  totalGenerations: number;
-  successfulGenerations: number;
-  failedGenerations: number;
-  averageGenerationTime: number;
-  totalProcessingTime: number;
-  popularThemes: Array<{ theme: string; count: number }>;
-  generationsByStatus: Record<SiteGenerationStatus, number>;
-  generationsByDay: Array<{ date: string; count: number }>;
-  performanceMetrics: {
-    avgAiProcessingTime: number;
-    avgHugoBuildTime: number;
-    avgPackagingTime: number;
-  };
+  totalFiles: number;
+  totalSize: number;
+  buildTime: number;
+  processingSteps: GenerationStep[];
 }
 
-export interface GenerationTemplate {
-  id: string;
-  name: string;
-  description: string;
-  hugoTheme: string;
-  customizations: {
-    colors: Record<string, string>;
-    fonts: Record<string, string>;
-    layout: Record<string, any>;
-  };
-  contentOptions: {
-    aiModel: string;
-    tone: string;
-    length: 'short' | 'medium' | 'long';
-    includeSEO: boolean;
-  };
-  isDefault: boolean;
-  createdBy: string;
-  createdAt: Date;
-  usageCount: number;
-}
-
-export interface HugoSiteConfig {
-  baseURL: string;
-  languageCode: string;
-  title: string;
-  description: string;
-  theme: string;
-  params: Record<string, any>;
-  menu: {
-    main: Array<{
-      name: string;
-      url: string;
-      weight: number;
-    }>;
-  };
-  markup: {
-    goldmark: {
-      renderer: {
-        unsafe: boolean;
-      };
-    };
-  };
-  outputs: {
-    home: string[];
-    page: string[];
-    section: string[];
-  };
-}
-
-export interface ContentPage {
-  name: string;
+export interface AIGeneratedPage {
   title: string;
   content: string;
-  frontMatter: {
-    title: string;
-    date: string;
-    draft: boolean;
-    description?: string;
-    keywords?: string[];
-    weight?: number;
-    menu?: string;
-    type?: string;
-    layout?: string;
-  };
-  sections?: ContentSection[];
+  slug: string;
+  description?: string;
+  keywords?: string[];
+  sections: ContentSection[];
 }
 
 export interface ContentSection {
@@ -246,32 +177,56 @@ export class GenerationValidationError extends Error {
   }
 }
 
-export function validateGenerationOptions(options: any): void {
-  // Only require hugoTheme if auto-detection is not enabled
-  if (!options.hugoTheme && !options.autoDetectTheme) {
-    throw new GenerationValidationError('THEME_NOT_SUPPORTED', 'Hugo theme is required when auto-detection is disabled');
-  }
+// Updated validation function to return proper validation result
+export function validateGenerationOptions(options: any): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
 
-  // Validate theme if provided
-  if (options.hugoTheme && !SUPPORTED_HUGO_THEMES.includes(options.hugoTheme)) {
-    throw new GenerationValidationError(
-      'THEME_NOT_SUPPORTED',
-      `Theme '${options.hugoTheme}' is not supported`
-    );
-  }
+  try {
+    // Only require hugoTheme if auto-detection is not enabled
+    if (!options.hugoTheme && !options.autoDetectTheme) {
+      errors.push('Hugo theme is required when auto-detection is disabled');
+    }
 
-  if (options.contentOptions?.aiModel && !AI_MODELS.includes(options.contentOptions.aiModel)) {
-    throw new GenerationValidationError(
-      'AI_SERVICE_ERROR',
-      `AI model '${options.contentOptions.aiModel}' is not supported`
-    );
-  }
+    // Validate theme if provided
+    if (options.hugoTheme && !SUPPORTED_HUGO_THEMES.includes(options.hugoTheme)) {
+      errors.push(`Theme '${options.hugoTheme}' is not supported`);
+    }
 
-  if (options.contentOptions?.tone && !CONTENT_TONES.includes(options.contentOptions.tone)) {
-    throw new GenerationValidationError(
-      'INVALID_CUSTOMIZATIONS',
-      `Content tone '${options.contentOptions.tone}' is not supported`
-    );
+    if (options.contentOptions?.aiModel && !AI_MODELS.includes(options.contentOptions.aiModel)) {
+      errors.push(`AI model '${options.contentOptions.aiModel}' is not supported`);
+    }
+
+    if (options.contentOptions?.tone && !CONTENT_TONES.includes(options.contentOptions.tone)) {
+      errors.push(`Content tone '${options.contentOptions.tone}' is not supported`);
+    }
+
+    // Validate customizations if provided
+    if (options.customizations) {
+      if (options.customizations.colors) {
+        for (const [key, value] of Object.entries(options.customizations.colors)) {
+          // Skip validation for 'name' field - it's just a text label
+          if (key === 'name') {
+            continue;
+          }
+          
+          // Only validate actual color fields (primary, secondary, accent, background, text)
+          if (typeof value === 'string' && value.startsWith('#') && !value.match(/^#[0-9A-Fa-f]{6}$/)) {
+            errors.push(`Invalid color format for ${key}: ${value}`);
+          }
+        }
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  } catch (error) {
+    errors.push('Validation failed due to unexpected error');
+    return {
+      isValid: false,
+      errors
+    };
   }
 }
 
@@ -307,7 +262,8 @@ export function getGenerationStatusFromSteps(steps: GenerationStep[]): SiteGener
   
   if (steps.some(step => step.status === 'running')) {
     const runningStep = steps.find(step => step.status === 'running');
-      if (runningStep?.id === 'initializing') {
+    
+    if (runningStep?.id === 'initializing') {
       return 'INITIALIZING' as any;
     }
     

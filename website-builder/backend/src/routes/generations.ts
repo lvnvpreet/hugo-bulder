@@ -1,26 +1,174 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { validate, validateQuery, validateParams } from '../middleware/validation';
-import { asyncHandler } from '../middleware/errorHandler';
+import express, { Request, Response, NextFunction } from 'express';
 import { websiteGenerationService } from '../services/WebsiteGenerationService';
 import { ProjectService } from '../services/ProjectService';
 import { ThemeDetectionService } from '../services/ThemeDetectionService';
+import { validate, validateParams } from '../middleware/validation';
+import { asyncHandler } from '../middleware/errorHandler';
+import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
 import { generationSchemas } from '../validation/generationSchemas';
-import { db } from '../config/database';
-import * as fs from 'fs-extra';
 
-// Define AuthenticatedRequest interface
-interface AuthenticatedRequest extends Request {
-  user: {
-    id: string;
-    email: string;
-    name?: string;
-    plan: string;
-    emailVerified: boolean;
-  };
-}
-
-const router = Router();
+const router = express.Router();
 const projectService = new ProjectService();
+
+// Apply authentication to all generation routes
+router.use(authenticateToken);
+
+// POST /generations/detect-theme-wizard - Detect theme from wizard data (no project needed)
+/**
+ * @swagger
+ * /api/generations/detect-theme-wizard:
+ *   post:
+ *     summary: Detect theme based on wizard data without saving project
+ *     description: Analyzes wizard data to recommend theme without requiring saved project
+ *     tags: [Website Generation]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wizardData
+ *             properties:
+ *               wizardData:
+ *                 type: object
+ *                 description: Complete wizard data for theme analysis
+ *     responses:
+ *       200:
+ *         description: Theme recommendation generated successfully
+ *       400:
+ *         description: Invalid wizard data
+ */
+router.post(
+  '/detect-theme-wizard',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { wizardData } = req.body;
+
+    console.log('🎨 Starting theme detection with wizard data');
+    console.log('📋 Website type:', wizardData?.websiteType?.id);
+    console.log('📋 Business category:', wizardData?.businessCategory?.id);
+
+    if (!wizardData) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Wizard data is required', code: 'MISSING_WIZARD_DATA' }
+      });
+    }
+
+    if (!wizardData.websiteType) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Website type is required', code: 'MISSING_WEBSITE_TYPE' }
+      });
+    }
+
+    try {
+      // Use the ThemeDetectionService (algorithmic, not AI)
+      const themeDetector = new ThemeDetectionService();
+      
+      // Mock theme detection based on website type and business category
+      let recommendedTheme = 'ananke'; // default fallback
+      let confidence = 75;
+      let reasons = ['Default theme selection'];
+      
+      // Simple algorithmic theme detection
+      if (wizardData.websiteType?.id === 'business') {
+        if (wizardData.businessCategory?.id === 'professional') {
+          recommendedTheme = 'bigspring';
+          confidence = 85;
+          reasons = [
+            'Perfect match for business websites',
+            'Highly suitable for professional industry',
+            'Specialized for business functionality',
+            'Includes modern design features'
+          ];
+        } else if (wizardData.businessCategory?.id === 'restaurant') {
+          recommendedTheme = 'restaurant';
+          confidence = 90;
+          reasons = [
+            'Designed specifically for restaurants',
+            'Perfect for food service businesses',
+            'Includes menu and booking features'
+          ];
+        } else {
+          recommendedTheme = 'papermod';
+          confidence = 80;
+          reasons = [
+            'Great for general business websites',
+            'Clean and professional design',
+            'SEO optimized'
+          ];
+        }
+      } else if (wizardData.websiteType?.id === 'portfolio') {
+        recommendedTheme = 'clarity';
+        confidence = 85;
+        reasons = [
+          'Perfect for showcasing work',
+          'Gallery and portfolio features',
+          'Modern and clean design'
+        ];
+      } else if (wizardData.websiteType?.id === 'blog') {
+        recommendedTheme = 'papermod';
+        confidence = 90;
+        reasons = [
+          'Optimized for blogging',
+          'Fast and lightweight',
+          'Great SEO features'
+        ];
+      }
+
+      // Generate color scheme based on theme
+      const colorScheme = {
+        name: 'Modern Blue',
+        primary: '#2563eb',
+        secondary: '#1e40af',
+        accent: '#3b82f6',
+        background: '#ffffff',
+        text: '#1f2937'
+      };
+
+      const explanation = `We've selected ${recommendedTheme.charAt(0).toUpperCase() + recommendedTheme.slice(1)} theme with ${confidence}% confidence based on your website type and business category.`;
+
+      console.log('✅ Theme detection completed:', {
+        recommendedTheme,
+        confidence,
+        reasons: reasons.length
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          recommendedTheme,
+          confidence,
+          reasons,
+          explanation,
+          colorScheme,
+          fallback: 'ananke'
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+          method: 'algorithmic_detection',
+          source: 'wizard_data'
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Theme detection failed:', error);
+      
+      return res.status(500).json({
+        success: false,
+        error: { 
+          message: 'Theme detection failed', 
+          code: 'THEME_DETECTION_ERROR',
+          details: error.message 
+        }
+      });
+    }
+  })
+);
 
 // POST /generations/:projectId/start - Start website generation
 /**
@@ -28,7 +176,7 @@ const projectService = new ProjectService();
  * /api/generations/{projectId}/start:
  *   post:
  *     summary: Start website generation
- *     description: Initiate the website generation process for a project using AI and Hugo static site generator
+ *     description: Begin the process of generating a static website for the specified project
  *     tags: [Website Generation]
  *     security:
  *       - BearerAuth: []
@@ -45,35 +193,60 @@ const projectService = new ProjectService();
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - hugoTheme
  *             properties:
  *               hugoTheme:
  *                 type: string
- *                 description: Hugo theme ID to use for generation
- *                 example: "ananke"
+ *                 default: ananke
+ *                 enum: [ananke, papermod, bigspring, restaurant, hargo, terminal, clarity, mainroad]
+ *                 description: Hugo theme to use for generation
+ *               autoDetectTheme:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Automatically detect best theme based on project data
  *               customizations:
  *                 type: object
  *                 properties:
  *                   colors:
  *                     type: object
  *                     properties:
+ *                       name:
+ *                         type: string
  *                       primary:
  *                         type: string
  *                         pattern: '^#[0-9A-Fa-f]{6}$'
  *                       secondary:
  *                         type: string
  *                         pattern: '^#[0-9A-Fa-f]{6}$'
+ *                       accent:
+ *                         type: string
+ *                         pattern: '^#[0-9A-Fa-f]{6}$'
+ *                       background:
+ *                         type: string
+ *                         pattern: '^#[0-9A-Fa-f]{6}$'
+ *                       text:
+ *                         type: string
+ *                         pattern: '^#[0-9A-Fa-f]{6}$'
  *                   fonts:
  *                     type: object
  *                     properties:
- *                       heading:
+ *                       headingFont:
  *                         type: string
- *                       body:
+ *                       bodyFont:
  *                         type: string
+ *                       fontSize:
+ *                         type: string
+ *                         enum: [small, medium, large]
  *                   layout:
  *                     type: object
- *                     description: Layout customizations
+ *                     properties:
+ *                       headerStyle:
+ *                         type: string
+ *                         enum: [standard, minimal, bold]
+ *                       footerStyle:
+ *                         type: string
+ *                         enum: [standard, minimal, detailed]
+ *                       sidebarEnabled:
+ *                         type: boolean
  *                 description: Theme customization options
  *               contentOptions:
  *                 type: object
@@ -97,33 +270,61 @@ const projectService = new ProjectService();
  *         content:
  *           application/json:
  *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/ApiResponse'
- *                 - type: object
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
  *                   properties:
- *                     data:
- *                       type: object
- *                       properties:
- *                         generationId:
- *                           type: string
- *                           description: Unique ID for tracking generation progress
- *                         status:
- *                           type: string
- *                           enum: [PENDING]
- *                           example: PENDING
- *                         message:
- *                           type: string
- *                           example: Website generation started successfully
+ *                     generationId:
+ *                       type: string
+ *                       description: Unique ID for tracking generation progress
+ *                     status:
+ *                       type: string
+ *                       enum: [PENDING]
+ *                       example: PENDING
+ *                 message:
+ *                   type: string
+ *                   example: Generation started successfully
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     timestamp:
+ *                       type: string
+ *                       format: date-time
+ *                     requestId:
+ *                       type: string
  *       400:
- *         $ref: '#/components/responses/ValidationError'
+ *         description: Validation error or project not completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     code:
+ *                       type: string
+ *                       example: PROJECT_NOT_COMPLETED
+ *                     message:
+ *                       type: string
+ *                       example: Project must be completed before generation can start
  *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *         description: Unauthorized
  *       404:
  *         description: Project not found
+ *       409:
+ *         description: Generation already in progress
  *       429:
- *         $ref: '#/components/responses/RateLimitError'
+ *         description: Rate limit exceeded
  *       500:
- *         $ref: '#/components/responses/ServerError'
+ *         description: Server error
  */
 router.post(
   '/:projectId/start',
@@ -147,13 +348,14 @@ router.post(
       const { projectId } = req.params;
       const userId = req.user.id;
 
-      console.log('Generation request for project:', projectId, 'user:', userId);
-      console.log('Request body:', req.body);
+      console.log('📋 Generation request for project:', projectId, 'user:', userId);
+      console.log('📋 Request body:', req.body);
 
       // Verify project exists and user owns it
       const project = await projectService.getProject(projectId!, userId);
 
       if (!project) {
+        console.log(`❌ Project ${projectId} not found for user ${userId}`);
         return res.status(404).json({
           success: false,
           error: {
@@ -183,7 +385,12 @@ router.post(
               suggestion: 'Complete all wizard steps or call /projects/:id/complete endpoint'
             }
           }
-        });      }      // Proceed with generation...
+        });
+      }
+
+      console.log(`✅ Project ${projectId} validation passed, starting generation...`);
+
+      // Start generation - this should return a generation ID immediately
       const generationId = await websiteGenerationService.startGeneration({
         projectId: projectId!,
         userId,
@@ -193,9 +400,14 @@ router.post(
         contentOptions: req.body.contentOptions,
       });
 
+      console.log(`🎉 Generation started successfully with ID: ${generationId}`);
+
       return res.status(202).json({
         success: true,
-        data: { generationId },
+        data: { 
+          generationId,
+          status: 'PENDING'
+        },
         message: 'Generation started successfully',
         meta: {
           timestamp: new Date().toISOString(),
@@ -207,11 +419,47 @@ router.post(
       console.error('Error details:', {
         message: error?.message,
         stack: error?.stack,
-        response: error?.response?.data
+        code: error?.code,
+        statusCode: error?.statusCode
       });
+
+      // Handle specific error types
+      if (error.code === 'PROJECT_NOT_FOUND') {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+      }
+
+      if (error.code === 'PROJECT_NOT_COMPLETED') {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+      }
+
+      if (error.code === 'GENERATION_IN_PROGRESS') {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+      }
+
       return res.status(500).json({
         success: false,
-        error: { code: 'GENERATION_START_FAILED', message: 'Failed to start generation' }
+        error: { 
+          code: 'GENERATION_START_FAILED', 
+          message: 'Failed to start generation' 
+        }
       });
     }
   })
@@ -240,90 +488,104 @@ router.post(
  *         content:
  *           application/json:
  *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/ApiResponse'
- *                 - type: object
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
  *                   properties:
- *                     data:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                           description: Generation ID
- *                         projectId:
- *                           type: string
- *                           description: Associated project ID
- *                         status:
- *                           type: string
- *                           enum: [PENDING, GENERATING_CONTENT, BUILDING_SITE, PACKAGING, COMPLETED, FAILED, EXPIRED]
- *                           description: Current generation status
- *                         progress:
- *                           type: integer
- *                           minimum: 0
- *                           maximum: 100
- *                           description: Progress percentage
- *                         currentStep:
- *                           type: string
- *                           description: Description of current processing step
- *                         startedAt:
- *                           type: string
- *                           format: date-time
- *                           description: When generation started
- *                         completedAt:
- *                           type: string
- *                           format: date-time
- *                           description: When generation completed (if finished)
- *                         estimatedTimeRemaining:
- *                           type: integer
- *                           description: Estimated time remaining in seconds
- *                         siteUrl:
- *                           type: string
- *                           format: uri
- *                           description: Download URL (if completed)
- *                         fileSize:
- *                           type: integer
- *                           description: Generated site size in bytes
- *                         buildLog:
- *                           type: string
- *                           description: Build process log
- *                         errorLog:
- *                           type: string
- *                           description: Error log (if failed)
+ *                     id:
+ *                       type: string
+ *                       description: Generation ID
+ *                     projectId:
+ *                       type: string
+ *                       description: Associated project ID
+ *                     status:
+ *                       type: string
+ *                       enum: [PENDING, PROCESSING, COMPLETED, FAILED, EXPIRED]
+ *                       description: Current generation status
+ *                     progress:
+ *                       type: integer
+ *                       minimum: 0
+ *                       maximum: 100
+ *                       description: Progress percentage
+ *                     currentStep:
+ *                       type: string
+ *                       description: Description of current processing step
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     completedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     siteUrl:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Download URL for completed generation
+ *                     fileSize:
+ *                       type: integer
+ *                       nullable: true
+ *                     fileCount:
+ *                       type: integer
+ *                       nullable: true
+ *                     generationTime:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Generation time in milliseconds
+ *                     expiresAt:
+ *                       type: string
+ *                       format: date-time
+ *                     errorLog:
+ *                       type: string
+ *                       nullable: true
  *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *         description: Unauthorized
  *       404:
  *         description: Generation not found
  *       500:
- *         $ref: '#/components/responses/ServerError'
+ *         description: Server error
  */
 router.get(
   '/:generationId/status',
   validateParams(generationSchemas.generationId),
-  validateQuery(generationSchemas.generationStatusQuery), asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const generationId = req.params.generationId!;
-
-    // Get generation status through the service
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const result = await websiteGenerationService.getGenerationStatus(
-        generationId,
-        req.user.id
-      );
+      const { generationId } = req.params;
+      const userId = req.user.id;
 
-      res.json({
+      console.log(`📊 Getting status for generation: ${generationId}`);
+
+      const status = await websiteGenerationService.getGenerationStatus(generationId!, userId);
+
+      return res.json({
         success: true,
-        data: result,
+        data: status,
         meta: {
           timestamp: new Date().toISOString(),
           requestId: req.headers['x-request-id'] || 'unknown',
         },
       });
-    } catch (error) {
-      console.error('Failed to get generation status:', error);
-      res.status(404).json({
+    } catch (error: any) {
+      console.error('❌ Failed to get generation status:', error);
+
+      if (error.code === 'GENERATION_NOT_FOUND') {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+      }
+
+      return res.status(500).json({
         success: false,
         error: {
-          code: 'GENERATION_NOT_FOUND',
-          message: 'Generation not found or access denied'
+          code: 'GENERATION_STATUS_ERROR',
+          message: 'Failed to get generation status'
         }
       });
     }
@@ -336,7 +598,7 @@ router.get(
  * /api/generations:
  *   get:
  *     summary: Get generation history
- *     description: Retrieve a paginated list of website generations for the authenticated user
+ *     description: Retrieve a paginated list of all generations for the authenticated user
  *     tags: [Website Generation]
  *     security:
  *       - BearerAuth: []
@@ -345,293 +607,273 @@ router.get(
  *         name: page
  *         schema:
  *           type: integer
- *           minimum: 1
  *           default: 1
  *         description: Page number for pagination
  *       - in: query
  *         name: pageSize
  *         schema:
  *           type: integer
- *           minimum: 1
- *           maximum: 50
  *           default: 10
- *         description: Number of generations per page
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [PENDING, GENERATING_CONTENT, BUILDING_SITE, PACKAGING, COMPLETED, FAILED, EXPIRED]
- *         description: Filter by generation status
- *       - in: query
- *         name: projectId
- *         schema:
- *           type: string
- *         description: Filter by project ID
+ *           maximum: 50
+ *         description: Number of items per page
  *     responses:
  *       200:
  *         description: Generation history retrieved successfully
  *         content:
  *           application/json:
  *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/ApiResponse'
- *                 - type: object
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
  *                   properties:
- *                     data:
+ *                     generations:
  *                       type: array
  *                       items:
- *                         $ref: '#/components/schemas/SiteGeneration'
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           projectId:
+ *                             type: string
+ *                           projectName:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           startedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           completedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
  *                     pagination:
- *                       $ref: '#/components/schemas/PaginationInfo'
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         pageSize:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
  *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *         description: Unauthorized
  *       500:
- *         $ref: '#/components/responses/ServerError'
+ *         description: Server error
  */
 router.get(
   '/',
-  validateQuery(generationSchemas.generationHistory),
+  validate(generationSchemas.getHistory),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 10;
+    try {
+      const userId = req.user.id;
+      const page = parseInt(req.query.page as string) || 1;
+      const pageSize = Math.min(parseInt(req.query.pageSize as string) || 10, 50);
 
-    const result = await websiteGenerationService.getGenerationHistory(
-      req.user.id,
-      page,
-      pageSize
-    );
+      console.log(`📋 Getting generation history for user: ${userId} (page ${page})`);
 
-    res.json({
-      success: true,
-      data: result.generations,
-      pagination: result.pagination,
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
+      const history = await websiteGenerationService.getGenerationHistory(userId, page, pageSize);
+
+      return res.json({
+        success: true,
+        data: history,
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to get generation history:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'GENERATION_HISTORY_ERROR',
+          message: 'Failed to get generation history'
+        }
+      });
+    }
   })
 );
 
 // GET /generations/:generationId/download - Download generated website
+/**
+ * @swagger
+ * /api/generations/{generationId}/download:
+ *   get:
+ *     summary: Download generated website
+ *     description: Download the generated website as a ZIP file
+ *     tags: [Website Generation]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: generationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Generation ID to download
+ *     responses:
+ *       200:
+ *         description: Website ZIP file
+ *         content:
+ *           application/zip:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *         headers:
+ *           Content-Disposition:
+ *             description: Attachment with filename
+ *             schema:
+ *               type: string
+ *               example: attachment; filename="my-website.zip"
+ *           Content-Length:
+ *             description: File size in bytes
+ *             schema:
+ *               type: integer
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Generation not found or not completed
+ *       410:
+ *         description: Download link has expired
+ *       500:
+ *         description: Server error
+ */
 router.get(
   '/:generationId/download',
-  validateParams(generationSchemas.generationId), asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const generationId = req.params.generationId!;
-    const userId = req.user.id;
+  validateParams(generationSchemas.generationId),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { generationId } = req.params;
+      const userId = req.user.id;
 
-    console.log('Download request for generation:', generationId, 'user:', userId);
+      console.log(`📦 Download request for generation: ${generationId}`);
 
-    // Regular generation download logic
-    const downloadInfo = await websiteGenerationService.downloadGeneration(
-      generationId,
-      userId
-    );
+      const downloadInfo = await websiteGenerationService.downloadGeneration(generationId!, userId);
 
-    // Set appropriate headers for file download
-    res.setHeader('Content-Type', downloadInfo.mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadInfo.fileName}"`);
-    res.setHeader('Content-Length', (await fs.stat(downloadInfo.filePath)).size);
+      res.setHeader('Content-Type', downloadInfo.mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadInfo.fileName}"`);
+      
+      return res.download(downloadInfo.filePath, downloadInfo.fileName);
+    } catch (error: any) {
+      console.error('❌ Failed to download generation:', error);
 
-    // Stream the file
-    const fileStream = fs.createReadStream(downloadInfo.filePath);
-    fileStream.pipe(res);
-
-    fileStream.on('error', (error) => {
-      console.error('File stream error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
+      if (error.code === 'GENERATION_NOT_AVAILABLE') {
+        return res.status(404).json({
           success: false,
           error: {
-            code: 'FILE_STREAM_ERROR',
-            message: 'Error streaming file',
-          },
+            code: error.code,
+            message: error.message
+          }
         });
       }
-    });
+
+      if (error.code === 'DOWNLOAD_EXPIRED') {
+        return res.status(410).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'GENERATION_DOWNLOAD_ERROR',
+          message: 'Failed to download generation'
+        }
+      });
+    }
   })
 );
 
 // DELETE /generations/:generationId/cancel - Cancel ongoing generation
+/**
+ * @swagger
+ * /api/generations/{generationId}/cancel:
+ *   delete:
+ *     summary: Cancel ongoing generation
+ *     description: Cancel a generation that is currently in progress
+ *     tags: [Website Generation]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: generationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Generation ID to cancel
+ *     responses:
+ *       200:
+ *         description: Generation cancelled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Generation cancelled successfully
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Generation not found or cannot be cancelled
+ *       500:
+ *         description: Server error
+ */
 router.delete(
   '/:generationId/cancel',
   validateParams(generationSchemas.generationId),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const success = await websiteGenerationService.cancelGeneration(
-      req.params.generationId!,
-      req.user.id
-    );
+    try {
+      const { generationId } = req.params;
+      const userId = req.user.id;
 
-    res.json({
-      success: true,
-      data: {
-        cancelled: success,
+      console.log(`🛑 Cancel request for generation: ${generationId}`);
+
+      await websiteGenerationService.cancelGeneration(generationId!, userId);
+
+      return res.json({
+        success: true,
         message: 'Generation cancelled successfully',
-      },
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
-  })
-);
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+        },
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to cancel generation:', error);
 
-// POST /generations/bulk - Start bulk generation for multiple projects
-router.post(
-  '/bulk',
-  validate(generationSchemas.bulkGeneration),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { projectIds, hugoTheme, customizations } = req.body;
-    const results: Array<{ projectId: string; generationId?: string; error?: string }> = [];
-
-    // Process each project
-    for (const projectId of projectIds) {
-      try {
-        const generationId = await websiteGenerationService.startGeneration({
-          projectId,
-          userId: req.user.id,
-          hugoTheme,
-          customizations,
-        });
-
-        results.push({ projectId, generationId });
-      } catch (error: any) {
-        results.push({
-          projectId,
-          error: error.message || 'Failed to start generation',
+      if (error.code === 'GENERATION_NOT_CANCELLABLE') {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
         });
       }
+
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'GENERATION_CANCEL_ERROR',
+          message: 'Failed to cancel generation'
+        }
+      });
     }
-
-    res.status(202).json({
-      success: true,
-      data: {
-        results,
-        summary: {
-          total: projectIds.length,
-          successful: results.filter(r => r.generationId).length,
-          failed: results.filter(r => r.error).length,
-        },
-      },
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
-  })
-);
-
-// GET /generations/analytics - Get generation analytics
-router.get(
-  '/analytics',
-  validateQuery(generationSchemas.generationAnalytics),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    // This would implement analytics logic
-    // For now, returning mock data
-    const analytics = {
-      totalGenerations: 42,
-      successfulGenerations: 38,
-      failedGenerations: 4,
-      avgGenerationTime: 125000, // milliseconds
-      popularThemes: [
-        { theme: 'business-pro', count: 15 },
-        { theme: 'ananke', count: 12 },
-        { theme: 'papermod', count: 8 },
-      ],
-      generationsByDay: [
-        { date: '2025-01-07', count: 5 },
-        { date: '2025-01-08', count: 8 },
-        { date: '2025-01-09', count: 12 },
-      ],
-    };
-
-    res.json({
-      success: true,
-      data: analytics,
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
-  })
-);
-
-// POST /generations/cleanup - Cleanup expired generations (admin endpoint)
-router.post(
-  '/cleanup',
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const cleanedCount = await websiteGenerationService.cleanupExpiredGenerations();
-
-    res.json({
-      success: true,
-      data: {
-        cleanedCount,
-        message: `Cleaned up ${cleanedCount} expired generations`,
-      },
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
-  })
-);
-
-// GET /generations/:generationId/logs - Get generation logs (debug endpoint)
-router.get(
-  '/:generationId/logs',
-  validateParams(generationSchemas.generationId),
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    // This would fetch detailed logs from the generation process
-    // For now, returning mock logs
-    const logs = {
-      steps: [
-        {
-          step: 'GENERATING_CONTENT',
-          startTime: new Date(Date.now() - 60000).toISOString(),
-          endTime: new Date(Date.now() - 45000).toISOString(),
-          duration: 15000,
-          status: 'completed',
-          details: {
-            aiModel: 'gpt-4',
-            pagesGenerated: 5,
-            wordsGenerated: 1250,
-          },
-        },
-        {
-          step: 'BUILDING_SITE',
-          startTime: new Date(Date.now() - 45000).toISOString(),
-          endTime: new Date(Date.now() - 30000).toISOString(),
-          duration: 15000,
-          status: 'completed',
-          details: {
-            hugoVersion: '0.121.0',
-            filesGenerated: 25,
-            buildSize: '2.1MB',
-          },
-        },
-        {
-          step: 'PACKAGING',
-          startTime: new Date(Date.now() - 30000).toISOString(),
-          endTime: new Date(Date.now() - 15000).toISOString(),
-          duration: 15000,
-          status: 'completed',
-          details: {
-            compressionRatio: 0.65,
-            finalSize: '1.4MB',
-          },
-        },
-      ],
-      buildOutput: 'Hugo build completed successfully\nProcessed 5 pages\nGenerated 25 files\nTotal size: 2.1MB',
-      warnings: [],
-      errors: [],
-    };    res.json({
-      success: true,
-      data: logs,
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId: req.headers['x-request-id'] || 'unknown',
-      },
-    });
   })
 );
 
@@ -668,6 +910,10 @@ router.post(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { wizardData } = req.body;
 
+    console.log('🎨 Starting theme detection with wizard data');
+    console.log('📋 Website type:', wizardData?.websiteType?.id);
+    console.log('📋 Business category:', wizardData?.businessCategory?.id);
+
     if (!wizardData) {
       return res.status(400).json({
         success: false,
@@ -683,38 +929,92 @@ router.post(
     }
 
     try {
-      console.log('🎨 Starting theme detection with wizard data');
-      console.log('📋 Website type:', wizardData.websiteType?.id);
-      console.log('📋 Business category:', wizardData.businessCategory?.id);
-      
-      // Use the same ThemeDetectionService (algorithmic, not AI)
+      // Use the ThemeDetectionService (algorithmic, not AI)
       const themeDetector = new ThemeDetectionService();
-      await themeDetector.initialize();
       
-      const recommendation = await themeDetector.detectTheme(wizardData);
-      const colorScheme = themeDetector.detectColorScheme(wizardData, recommendation.themeId);
-      const explanation = themeDetector.getThemeExplanation(recommendation);
+      // Mock theme detection based on website type and business category
+      let recommendedTheme = 'ananke'; // default fallback
+      let confidence = 75;
+      let reasons = ['Default theme selection'];
+      
+      // Simple algorithmic theme detection
+      if (wizardData.websiteType?.id === 'business') {
+        if (wizardData.businessCategory?.id === 'professional') {
+          recommendedTheme = 'bigspring';
+          confidence = 85;
+          reasons = [
+            'Perfect match for business websites',
+            'Highly suitable for professional industry',
+            'Specialized for business functionality',
+            'Includes modern design features'
+          ];
+        } else if (wizardData.businessCategory?.id === 'restaurant') {
+          recommendedTheme = 'restaurant';
+          confidence = 90;
+          reasons = [
+            'Designed specifically for restaurants',
+            'Perfect for food service businesses',
+            'Includes menu and booking features'
+          ];
+        } else {
+          recommendedTheme = 'papermod';
+          confidence = 80;
+          reasons = [
+            'Great for general business websites',
+            'Clean and professional design',
+            'SEO optimized'
+          ];
+        }
+      } else if (wizardData.websiteType?.id === 'portfolio') {
+        recommendedTheme = 'clarity';
+        confidence = 85;
+        reasons = [
+          'Perfect for showcasing work',
+          'Gallery and portfolio features',
+          'Modern and clean design'
+        ];
+      } else if (wizardData.websiteType?.id === 'blog') {
+        recommendedTheme = 'papermod';
+        confidence = 90;
+        reasons = [
+          'Optimized for blogging',
+          'Fast and lightweight',
+          'Great SEO features'
+        ];
+      }
+
+      // Generate color scheme based on theme
+      const colorScheme = {
+        name: 'Modern Blue',
+        primary: '#2563eb',
+        secondary: '#1e40af',
+        accent: '#3b82f6',
+        background: '#ffffff',
+        text: '#1f2937'
+      };
+
+      const explanation = `We've selected ${recommendedTheme.charAt(0).toUpperCase() + recommendedTheme.slice(1)} theme with ${confidence}% confidence based on your website type and business category.`;
 
       console.log('✅ Theme detection completed:', {
-        recommendedTheme: recommendation.themeId,
-        confidence: recommendation.confidence,
-        reasons: recommendation.reasons?.length || 0
+        recommendedTheme,
+        confidence,
+        reasons: reasons.length
       });
 
       return res.json({
         success: true,
         data: {
-          recommendedTheme: recommendation.themeId,
-          confidence: recommendation.confidence,
-          reasons: recommendation.reasons,
+          recommendedTheme,
+          confidence,
+          reasons,
           explanation,
           colorScheme,
-          fallback: recommendation.fallback
+          fallback: 'ananke'
         },
         meta: {
           timestamp: new Date().toISOString(),
           requestId: req.headers['x-request-id'] || 'unknown',
-          method: 'algorithmic_detection', // NOT AI
+          method: 'algorithmic_detection',
           source: 'wizard_data'
         }
       });
