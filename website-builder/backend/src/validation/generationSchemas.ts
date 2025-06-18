@@ -2,25 +2,11 @@ import Joi from 'joi';
 
 // Schema for starting website generation
 export const startGenerationSchema = Joi.object({
-  // CHANGED: Make hugoTheme optional for auto-detection
   hugoTheme: Joi.string().optional(),
-  
-  customizations: Joi.object({
-    colors: Joi.object().pattern(Joi.string(), Joi.string().pattern(/^#[0-9a-fA-F]{6}$/)).optional(),
-    fonts: Joi.object().pattern(Joi.string(), Joi.string()).optional(),
-    layout: Joi.object().optional(),
-  }).optional(),
-  
-  contentOptions: Joi.object({
-    aiModel: Joi.string().valid('gpt-4', 'gpt-3.5-turbo', 'llama3', 'mistral').optional(),
-    tone: Joi.string().valid('professional', 'casual', 'friendly', 'formal', 'creative').optional(),
-    length: Joi.string().valid('short', 'medium', 'long').optional(),
-    includeSEO: Joi.boolean().optional(),
-  }).optional(),
-  
-  // NEW: Flag to enable auto-detection
-  autoDetectTheme: Joi.boolean().default(true),
-});
+  customizations: Joi.object().optional(),
+  contentOptions: Joi.object().optional(),
+  autoDetectTheme: Joi.boolean().optional(),
+}).unknown(true); // Allow any additional fields
 
 // Schema for generation status query parameters
 export const generationStatusQuerySchema = Joi.object({
