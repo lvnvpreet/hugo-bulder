@@ -134,7 +134,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"My Awesome Website\",\n  \"description\": \"A professional business website\",\n  \"wizardData\": {\n    \"websiteType\": \"business\",\n    \"businessInfo\": {\n      \"name\": \"Acme Corp\",\n      \"description\": \"We provide excellent services\",\n      \"industry\": \"Technology\",\n      \"location\": \"San Francisco, CA\"\n    },\n    \"designPreferences\": {\n      \"theme\": \"business-pro\",\n      \"colorScheme\": \"blue\",\n      \"layout\": \"modern\"\n    }\n  }\n}"
+              "raw": "{\n  \"name\": \"My Awesome Website\",\n  \"description\": \"A professional business website\",\n  \"wizardData\": {\n    \"websiteType\": \"business\",\n    \"businessInfo\": {\n      \"name\": \"Acme Corp\",\n      \"description\": \"We provide excellent services\",\n      \"industry\": \"Technology\",\n      \"location\": \"San Francisco, CA\"\n    },\n    \"designPreferences\": {\n      \"theme\": \"ananke\",\n      \"colorScheme\": \"blue\",\n      \"layout\": \"modern\"\n    }\n  }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/projects",
@@ -245,7 +245,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"hugoTheme\": \"business-pro\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\",\n      \"secondary\": \"#64748b\",\n      \"accent\": \"#f59e0b\"\n    },\n    \"fonts\": {\n      \"heading\": \"Inter\",\n      \"body\": \"Source Sans Pro\"\n    }\n  },\n  \"contentOptions\": {\n    \"aiModel\": \"gpt-4\",\n    \"tone\": \"professional\",\n    \"length\": \"medium\",\n    \"includeSEO\": true\n  }\n}"
+              "raw": "{\n  \"hugoTheme\": \"ananke\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\",\n      \"secondary\": \"#64748b\",\n      \"accent\": \"#f59e0b\"\n    },\n    \"fonts\": {\n      \"heading\": \"Inter\",\n      \"body\": \"Source Sans Pro\"\n    }\n  },\n  \"contentOptions\": {\n    \"aiModel\": \"gpt-4\",\n    \"tone\": \"professional\",\n    \"length\": \"medium\",\n    \"includeSEO\": true\n  }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/generations/{{projectId}}/start",
@@ -320,7 +320,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"projectIds\": [\"{{projectId}}\"],\n  \"hugoTheme\": \"business-pro\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\"\n    }\n  }\n}"
+              "raw": "{\n  \"projectIds\": [\"{{projectId}}\"],\n  \"hugoTheme\": \"ananke\",\n  \"customizations\": {\n    \"colors\": {\n      \"primary\": \"#3b82f6\"\n    }\n  }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/generations/bulk",

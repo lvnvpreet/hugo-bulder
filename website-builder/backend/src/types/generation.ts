@@ -194,16 +194,12 @@ export const GENERATION_STEPS = {
 export const SUPPORTED_HUGO_THEMES = [
   'ananke',
   'papermod',
-  'business-pro',
-  'restaurant-deluxe',
-  'medical-care',
-  'creative-studio',
-  'tech-startup',
-  'retail-store',
-  'academic',
-  'mainroad',
-  'clarity',
+  'bigspring',
+  'restaurant',
+  'hargo',
   'terminal',
+  'clarity',
+  'mainroad',
 ] as const;
 
 export const AI_MODELS = [

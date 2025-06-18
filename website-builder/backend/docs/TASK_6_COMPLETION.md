@@ -77,7 +77,7 @@ Successfully implemented a comprehensive Website Generation API for the Hugo web
 6. **Notification**: Webhook events and status updates
 
 ### Supported Features
-- **12+ Hugo Themes**: business-pro, ananke, papermod, restaurant-deluxe, medical-care, creative-studio, tech-startup, retail-store, academic, mainroad, clarity, terminal
+- **8 Hugo Themes**: ananke, papermod, bigspring, restaurant, hargo, terminal, clarity, mainroad
 - **AI Models**: GPT-4, GPT-3.5-turbo, Llama3, Mistral
 - **Content Tones**: Professional, casual, friendly, formal, creative, authoritative, conversational, technical
 - **Customizations**: Colors, fonts, layouts, SEO settings

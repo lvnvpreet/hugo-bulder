@@ -484,8 +484,7 @@ export class WebsiteGenerationService {
       throw new Error(`Failed to install theme: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  
-  /**
+    /**
    * Get theme URL from theme ID
    */  private getThemeUrl(themeName: string): string {
     const defaultThemeUrl = 'https://github.com/theNewDynamic/gohugo-theme-ananke.git';
@@ -493,8 +492,12 @@ export class WebsiteGenerationService {
     const themeUrls = {
       'ananke': 'https://github.com/theNewDynamic/gohugo-theme-ananke.git',
       'papermod': 'https://github.com/adityatelange/hugo-PaperMod.git',
-      'business-pro': 'https://github.com/example/business-pro.git',
-      // Add more theme URLs as needed
+      'bigspring': 'https://github.com/gethugothemes/bigspring-light-hugo.git',
+      'restaurant': 'https://github.com/themefisher/restaurant-hugo.git',
+      'hargo': 'https://github.com/gethugothemes/hargo-hugo.git',
+      'terminal': 'https://github.com/panr/hugo-theme-terminal.git',
+      'clarity': 'https://github.com/chipzoller/hugo-clarity.git',
+      'mainroad': 'https://github.com/Vimux/Mainroad.git',
     } as const;
     
     const lowerThemeName = themeName.toLowerCase();

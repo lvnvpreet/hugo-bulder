@@ -19,7 +19,7 @@ With the frontend running on **http://localhost:3000**, follow these steps to ve
 
 **Step 4 - Website Structure**: Choose single-page or multi-page
 
-**Step 5 - Hugo Theme**: Select any supported theme (e.g., "business-pro", "ananke")
+**Step 5 - Hugo Theme**: Select any supported theme (e.g., "ananke", "papermod")
 
 **Step 6 - Business Info**: 
 - ✅ **CRITICAL**: Fill out business name and description (required for our fix)

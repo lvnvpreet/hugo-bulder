@@ -28,7 +28,7 @@ const testBrowserGeneration = async () => {
         websiteType: { category: 'business' },
         businessCategory: { name: 'Technology' },
         websitePurpose: { goals: ['Generate leads', 'Showcase products'] },
-        themeConfig: { hugoTheme: 'business-pro' },
+        themeConfig: { hugoTheme: 'ananke' },
         designPreferences: { style: 'modern', colors: ['blue', 'white'] },
         contentRequirements: { pages: ['home', 'about', 'contact'], tone: 'professional' }
       },

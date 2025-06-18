@@ -21,7 +21,7 @@ const test400Error = async () => {
     const response = await axios.post(
       `${API_BASE}/generations/${projectId}/start`,
       {
-        hugoTheme: 'business-pro',
+        hugoTheme: 'ananke',
         contentOptions: { tone: 'professional' }
       },
       { 

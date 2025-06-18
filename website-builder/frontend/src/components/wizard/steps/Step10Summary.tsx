@@ -289,12 +289,94 @@ export default function Step10Summary() {
     return summary;
   };
 
-  // State to hold current project ID and project details
+  // ✅ FIXED: Enhanced polling with better error handling and corrected logic
+  const pollGenerationStatus = async (generationId: string) => {
+    const maxAttempts = 120; // 10 minutes at 5-second intervals
+    let attempts = 0;
 
+    const poll = async () => {
+      attempts++;
+      console.log(`📊 Polling attempt ${attempts}/${maxAttempts} for generation:`, generationId);
 
-  // Add this to your Step10Summary.tsx handleGenerateWebsite function
-  // Replace the existing project creation section with this:
+      try {
+        const statusResponse = await api.get(`/generations/${generationId}/status`) as any;
+        
+        // ✅ FIXED: Handle response structure properly
+        const statusData = statusResponse?.data?.data || statusResponse?.data;
+        
+        console.log('📈 Generation status response:', statusResponse);
+        console.log('📈 Generation status data:', statusData);
 
+        if (!statusData) {
+          throw new Error('Invalid status response structure');
+        }
+
+        const status = statusData.status;
+        const progressValue = statusData.progress || (progress < 90 ? progress + 5 : progress);
+        const stepMessage = statusData.currentStep || 'Processing...';
+
+        // Update UI
+        setProgress(progressValue);
+        setCurrentStep(stepMessage);
+
+        if (status === 'COMPLETED') {
+          console.log('🎉 Generation completed successfully');
+          setGenerationResult({
+            previewUrl: statusData.previewUrl || statusData.siteUrl,
+            downloadUrl: statusData.downloadUrl || statusData.siteUrl,
+            content: statusData.content
+          });
+          setProgress(100);
+          setCurrentStep('Website generation completed!');
+          setGenerationComplete(true);
+          setIsGenerating(false);
+          toast.success('Website generated successfully!');
+          return;
+        }
+
+        if (status === 'FAILED') {
+          console.log('❌ Generation failed');
+          const errorMessage = statusData.errorLog || statusData.error || 'Website generation failed. Please try again.';
+          setError(errorMessage);
+          setIsGenerating(false);
+          return;
+        }
+
+        // ✅ FIXED: Handle all in-progress states
+        if (['PENDING', 'INITIALIZING', 'BUILDING_STRUCTURE', 'APPLYING_THEME', 'GENERATING_CONTENT', 'BUILDING_SITE', 'PACKAGING'].includes(status)) {
+          if (attempts < maxAttempts) {
+            setTimeout(poll, 5000); // Poll every 5 seconds
+          } else {
+            setError('Generation is taking longer than expected. Please check back later.');
+            setIsGenerating(false);
+          }
+          return;
+        }
+
+        // Unknown status
+        console.warn('⚠️ Unknown generation status:', status);
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 5000);
+        } else {
+          setError('Generation status is unclear. Please refresh the page.');
+          setIsGenerating(false);
+        }
+
+      } catch (error: any) {
+        console.error('❌ Status polling failed:', error);
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 5000);
+        } else {
+          setError('Failed to get generation status. Please refresh the page.');
+          setIsGenerating(false);
+        }
+      }
+    };
+
+    poll();
+  };
+
+  // ✅ FIXED: Main generation function with improved error handling
   const handleGenerateWebsite = async () => {
     try {
       setIsGenerating(true);
@@ -359,12 +441,10 @@ export default function Step10Summary() {
         }
       }
 
-      // Replace the completion section in Step10Summary.tsx with this corrected version:
-
       setProgress(25);
       setCurrentStep('Project ready');
 
-      // STEP 5: 🔧 CRITICAL FIX - Force project completion (corrected)
+      // STEP 5: Force project completion
       console.log('🔧 Forcing project completion...');
       setCurrentStep('Completing project setup...');
       setProgress(30);
@@ -378,8 +458,8 @@ export default function Step10Summary() {
         console.log('🔍 Re-fetching project to verify completion...');
         const updatedProjectResponse = await api.get(`/projects/${currentProjectId}`) as any;
 
-        // CORRECTED: Based on debug output, the project data is in the response directly
-        project = updatedProjectResponse; // Your API returns project data directly
+        // Handle response structure properly
+        project = updatedProjectResponse.data?.data || updatedProjectResponse.data || updatedProjectResponse;
 
         console.log('🔍 Project after completion:', {
           id: project?.id,
@@ -389,7 +469,6 @@ export default function Step10Summary() {
           businessName: project?.wizardData?.businessInfo?.name
         });
 
-        // Verify completion worked
         if (project?.isCompleted) {
           console.log('✅ Project is completed, proceeding to generation...');
         } else {
@@ -399,25 +478,38 @@ export default function Step10Summary() {
       } catch (completeError: any) {
         console.error('❌ Failed to complete project:', completeError);
         console.error('Error details:', completeError.response?.data);
-
-        // Proceed anyway
         console.log('⚠️ Proceeding with generation despite completion error...');
       }
 
       setProgress(35);
       setCurrentStep('Starting website generation...');
 
-      // STEP 6: Start the generation process with error logging
+      // STEP 6: Start the generation process
       console.log('🎬 Starting generation for project:', currentProjectId);
       console.log('🎯 Proceeding with generation...');
 
       try {
-        const generateResponse = await api.post(`/generations/${currentProjectId}/start`, {
+        const generatePayload = {
           hugoTheme: themeRecommendation?.recommendedTheme || 'ananke',
           customizations: {
-            colors: data.themeConfig?.colorScheme || {},
-            fonts: data.themeConfig?.typography || {},
-            layout: data.themeConfig?.layout || {}
+            colors: data.themeConfig?.colorScheme || {
+              name: 'Default',
+              primary: '#3b82f6',
+              secondary: '#1e40af',
+              accent: '#60a5fa',
+              background: '#ffffff',
+              text: '#1f2937'
+            },
+            fonts: data.themeConfig?.typography || {
+              headingFont: 'Inter',
+              bodyFont: 'Inter',
+              fontSize: 'medium'
+            },
+            layout: data.themeConfig?.layout || {
+              headerStyle: 'standard',
+              footerStyle: 'standard',
+              sidebarEnabled: false
+            }
           },
           contentOptions: {
             generateSampleContent: true,
@@ -425,15 +517,32 @@ export default function Step10Summary() {
             includeImages: true,
             seoOptimized: true
           }
-        }) as any;
+        };
+
+        console.log('📤 Generation payload:', generatePayload);
+
+        const generateResponse = await api.post(`/generations/${currentProjectId}/start`, generatePayload) as any;
 
         console.log('🎯 Generation response:', generateResponse);
 
-        if (!generateResponse.data?.success) {
-          throw new Error(generateResponse.data?.error?.message || 'Failed to start generation');
+        // ✅ FIXED: Check response structure properly
+        if (!generateResponse.data?.success && !generateResponse.success) {
+          const errorMessage = generateResponse.data?.error?.message || 
+                              generateResponse.error?.message || 
+                              'Failed to start generation';
+          throw new Error(errorMessage);
         }
 
-        const generationId = generateResponse.data.data.generationId;
+        // ✅ FIXED: Extract generation ID correctly
+        const generationId = generateResponse.data?.data?.generationId || 
+                            generateResponse.data?.generationId ||
+                            generateResponse.generationId;
+
+        if (!generationId) {
+          console.error('❌ No generation ID in response:', generateResponse);
+          throw new Error('No generation ID received from server');
+        }
+
         console.log('📝 Generation ID:', generationId);
 
         setProgress(40);
@@ -462,350 +571,290 @@ export default function Step10Summary() {
         );
       }
 
-      // Enhanced polling with better error handling
-      const pollGenerationStatus = async (generationId: string) => {
-        const maxAttempts = 120; // 10 minutes at 5-second intervals
-        let attempts = 0;
+    } catch (error: any) {
+      console.error('❌ Generation failed:', error);
+      setError(error.message || 'Website generation failed');
+      setIsGenerating(false);
+    }
+  };
 
-        const poll = async () => {
-          attempts++;
-          console.log(`📊 Polling attempt ${attempts}/${maxAttempts} for generation:`, generationId);
+  const handleGenerateClick = () => {
+    handleGenerateWebsite();
+  };
 
-          try {
-            const statusResponse = await api.get(`/generations/${generationId}/status`) as any;
-            const status = statusResponse.data.data;
+  const handleStartOver = () => {
+    clearData();
+    setProjectId(null); // Clear cached project ID
+    setThemeRecommendation(null); // Clear theme recommendation
+  };
 
-            console.log('📈 Generation status:', status);
+  const summary = getWizardSummary();
 
-            if (status.status === 'COMPLETED') {
-              console.log('🎉 Generation completed successfully');
-              setGenerationResult({
-                previewUrl: status.previewUrl,
-                downloadUrl: status.downloadUrl,
-                content: status.content
-              });
-              setProgress(100);
-              setCurrentStep('Website generation completed!');
-              setGenerationComplete(true);
-              toast.success('Website generated successfully!');
-              return;
-            }
-
-            if (status.status === 'FAILED') {
-              console.log('❌ Generation failed');
-              setError('Website generation failed. Please try again.');
-              return;
-            }
-
-            if (['PENDING', 'GENERATING_CONTENT', 'BUILDING_SITE', 'PACKAGING'].includes(status.status)) {
-              setProgress(status.progress || progress + 5);
-              setCurrentStep(status.currentStep || 'Processing...');
-
-              if (attempts < maxAttempts) {
-                setTimeout(poll, 5000); // Poll every 5 seconds
-              } else {
-                setError('Generation is taking longer than expected. Please check back later.');
-              }
-              return;
-            }
-
-          } catch (error) {
-            console.error('❌ Status polling failed:', error);
-            if (attempts < maxAttempts) {
-              setTimeout(poll, 5000);
-            } else {
-              setError('Failed to get generation status. Please refresh the page.');
-            }
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+          {isGenerationComplete ? 'Website Generated Successfully!' : 'Review & Generate Your Website'}
+        </h2>
+        <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+          {isGenerationComplete
+            ? 'Your Hugo website has been generated and is ready for download and deployment.'
+            : 'Review your website configuration and generate your Hugo-powered website.'
           }
-        };
+        </p>
+      </div>
 
-        poll();
-          };
-    
-        } catch (error: any) {
-          console.error('❌ Generation failed:', error);
-          setError(error.message || 'Website generation failed');
-          setIsGenerating(false);
-        }
-      };
-    
-      const handleGenerateClick = () => {
-        handleGenerateWebsite();
-      };
-    
-      const handleStartOver = () => {
-        clearData();
-        setProjectId(null); // Clear cached project ID
-        setThemeRecommendation(null); // Clear theme recommendation
-      };
-    
-      const summary = getWizardSummary();
-    
-      return (
-        <div className="space-y-8">
-          {/* Header */}
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
-              {isGenerationComplete ? 'Website Generated Successfully!' : 'Review & Generate Your Website'}
-            </h2>
-            <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-              {isGenerationComplete
-                ? 'Your Hugo website has been generated and is ready for download and deployment.'
-                : 'Review your website configuration and generate your Hugo-powered website.'
-              }
-            </p>
+      {!isGenerationComplete && (
+        <>
+          {/* Configuration Summary */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                <DocumentIcon className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
+                Website Configuration Summary
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {summary.map((item, index) => (
+                  <div key={index} className="flex items-start space-x-3">
+                    <CheckCircleIcon className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="font-medium text-gray-900 dark:text-white mb-1">
+                        {item.title}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {item.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {!isGenerationComplete && (
-            <>
-              {/* Configuration Summary */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-                    <DocumentIcon className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-                    Website Configuration Summary
-                  </h3>
-                </div>
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {summary.map((item, index) => (
-                      <div key={index} className="flex items-start space-x-3">
-                        <CheckCircleIcon className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <h4 className="font-medium text-gray-900 dark:text-white mb-1">
-                            {item.title}
-                          </h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {item.content}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Theme Recommendation Preview */}
-              {isLoadingTheme ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                  <div className="flex items-center space-x-3">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
-                    <h3 className="font-semibold text-gray-700">
-                      Analyzing your requirements to recommend the perfect theme...
-                    </h3>
-                  </div>
-                </div>
-              ) : themeRecommendation ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <span className="text-2xl">🎨</span>
-                    <h3 className="font-semibold text-blue-900">
-                      Recommended Theme: {themeRecommendation.recommendedTheme}
-                    </h3>
-                    <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                      {Math.round(themeRecommendation.confidence)}% confidence
-                    </span>
-                  </div>
-
-                  <p className="text-blue-700 text-sm mb-4">
-                    {themeRecommendation.explanation}
-                  </p>
-
-                  <details className="text-sm">
-                    <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
-                      Why this theme?
-                    </summary>
-                    <ul className="mt-2 ml-4 space-y-1 text-blue-600">
-                      {themeRecommendation.reasons?.map((reason: string, index: number) => (
-                        <li key={index}>• {reason}</li>
-                      ))}
-                    </ul>
-                  </details>
-                </div>
-              ) : null}
-
-              {/* Generation Progress */}
-              {isGenerating && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
-                    <div className="flex-1">
-                      <p className="font-medium text-blue-900 dark:text-blue-100">{currentStep}</p>
-                      <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mt-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{progress}% complete</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Error Display */}
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                  <div className="flex items-center space-x-2">
-                    <ExclamationTriangleIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
-                    <p className="text-red-800 dark:text-red-200">{error}</p>
-                  </div>
-                  <button
-                    onClick={handleGenerateClick}
-                    className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                  >
-                    Retry Generation
-                  </button>
-                </div>
-              )}
-
-              {/* Generation Options */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <PlayIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                      Ready to Generate Your Website?
-                    </h3>
-                    <p className="text-blue-700 dark:text-blue-300 mb-4">
-                      We'll create a complete Hugo website with your chosen theme, content, and configuration.
-                      The generated site will include all necessary files and can be deployed immediately.
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <button
-                        onClick={handleGenerateClick}
-                        disabled={isGenerating}
-                        className="flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
-                      >
-                        {isGenerating ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                            Generating Website...
-                          </>
-                        ) : (
-                          <>
-                            <PlayIcon className="w-4 h-4 mr-2" />
-                            Generate Website
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={handleStartOver}
-                        className="px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
-                      >
-                        Start Over
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Generation Complete */}
-          {isGenerationComplete && (
-            <div className="space-y-6">
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
-                <div className="flex items-center space-x-4">
-                  <div className="flex-shrink-0">
-                    <CheckCircleIcon className="w-12 h-12 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-green-900 dark:text-green-100 mb-2">
-                      Website Generation Complete!
-                    </h3>
-                    <p className="text-green-700 dark:text-green-300">
-                      Your Hugo website has been successfully generated with all your customizations.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Download and Preview Actions */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <ArrowDownTrayIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Download Your Website
-                    </h3>
-                  </div>
-                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                    Download the complete Hugo website as a ZIP file. Contains all source files, content, and assets.
-                  </p>
-                  <button
-                    onClick={() => generationResult?.downloadUrl && window.open(generationResult.downloadUrl, '_blank')}
-                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-                  >
-                    Download ZIP File
-                  </button>
-                </div>
-
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <EyeIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Preview Your Website
-                    </h3>
-                  </div>
-                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                    View a live preview of your generated website before downloading or deploying.
-                  </p>
-                  <button
-                    onClick={() => generationResult?.previewUrl && window.open(generationResult.previewUrl, '_blank')}
-                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
-                  >
-                    Preview Site
-                  </button>
-                </div>
-              </div>
-
-              {/* Next Steps */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Next Steps
+          {/* Theme Recommendation Preview */}
+          {isLoadingTheme ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+                <h3 className="font-semibold text-gray-700">
+                  Analyzing your requirements to recommend the perfect theme...
                 </h3>
-                <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
-                      1
-                    </div>
-                    <p>Download and extract your website files to your local machine.</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
-                      2
-                    </div>
-                    <p>Install Hugo on your computer to preview and edit your site locally.</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
-                      3
-                    </div>
-                    <p>Customize your content by editing the Markdown files in the content directory.</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
-                      4
-                    </div>
-                    <p>Deploy your site to a hosting platform for the world to see.</p>
-                  </div>
-                </div>
+              </div>
+            </div>
+          ) : themeRecommendation ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-3">
+                <span className="text-2xl">🎨</span>
+                <h3 className="font-semibold text-blue-900">
+                  Recommended Theme: {themeRecommendation.recommendedTheme}
+                </h3>
+                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                  {Math.round(themeRecommendation.confidence)}% confidence
+                </span>
               </div>
 
-              {/* Create Another Site */}
-              <div className="text-center">
-                <button
-                  onClick={handleStartOver}
-                  className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
-                >
-                  Create Another Website
-                </button>
+              <p className="text-blue-700 text-sm mb-4">
+                {themeRecommendation.explanation}
+              </p>
+
+              <details className="text-sm">
+                <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
+                  Why this theme?
+                </summary>
+                <ul className="mt-2 ml-4 space-y-1 text-blue-600">
+                  {themeRecommendation.reasons?.map((reason: string, index: number) => (
+                    <li key={index}>• {reason}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ) : null}
+
+          {/* Generation Progress */}
+          {isGenerating && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+                <div className="flex-1">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">{currentStep}</p>
+                  <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mt-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{progress}% complete</p>
+                </div>
               </div>
             </div>
           )}
+
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <ExclamationTriangleIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+                <p className="text-red-800 dark:text-red-200">{error}</p>
+              </div>
+              <button
+                onClick={handleGenerateClick}
+                className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Retry Generation
+              </button>
+            </div>
+          )}
+
+          {/* Generation Options */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+            <div className="flex items-start space-x-4">
+              <div className="flex-shrink-0">
+                <PlayIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                  Ready to Generate Your Website?
+                </h3>
+                <p className="text-blue-700 dark:text-blue-300 mb-4">
+                  We'll create a complete Hugo website with your chosen theme, content, and configuration.
+                  The generated site will include all necessary files and can be deployed immediately.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={handleGenerateClick}
+                    disabled={isGenerating}
+                    className="flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                        Generating Website...
+                      </>
+                    ) : (
+                      <>
+                        <PlayIcon className="w-4 h-4 mr-2" />
+                        Generate Website
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleStartOver}
+                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
+                  >
+                    Start Over
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Generation Complete */}
+      {isGenerationComplete && (
+        <div className="space-y-6">
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <CheckCircleIcon className="w-12 h-12 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-green-900 dark:text-green-100 mb-2">
+                  Website Generation Complete!
+                </h3>
+                <p className="text-green-700 dark:text-green-300">
+                  Your Hugo website has been successfully generated with all your customizations.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Download and Preview Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <ArrowDownTrayIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Download Your Website
+                </h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                Download the complete Hugo website as a ZIP file. Contains all source files, content, and assets.
+              </p>
+              <button
+                onClick={() => generationResult?.downloadUrl && window.open(generationResult.downloadUrl, '_blank')}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Download ZIP File
+              </button>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <EyeIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Preview Your Website
+                </h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                View a live preview of your generated website before downloading or deploying.
+              </p>
+              <button
+                onClick={() => generationResult?.previewUrl && window.open(generationResult.previewUrl, '_blank')}
+                className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Preview Site
+              </button>
+            </div>
+          </div>
+
+          {/* Next Steps */}
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Next Steps
+            </h3>
+            <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
+                  1
+                </div>
+                <p>Download and extract your website files to your local machine.</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
+                  2
+                </div>
+                <p>Install Hugo on your computer to preview and edit your site locally.</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
+                  3
+                </div>
+                <p>Customize your content by editing the Markdown files in the content directory.</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-medium">
+                  4
+                </div>
+                <p>Deploy your site to a hosting platform for the world to see.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Create Another Site */}
+          <div className="text-center">
+            <button
+              onClick={handleStartOver}
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Create Another Website
+            </button>
+          </div>
         </div>
-      );
-    }
+      )}
+    </div>
+  );
+}

@@ -32,7 +32,7 @@ Start the website generation process for a project.
 **Request Body:**
 ```json
 {
-  "hugoTheme": "business-pro",
+  "hugoTheme": "ananke",
   "customizations": {
     "colors": {
       "primary": "#3b82f6",

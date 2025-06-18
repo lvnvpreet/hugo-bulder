@@ -53,7 +53,7 @@ const testGenerationFix = async () => {
           goals: ['Generate leads', 'Showcase products']
         },
         themeConfig: {
-          hugoTheme: 'business-pro'
+          hugoTheme: 'ananke'
         },
         designPreferences: {
           style: 'modern',
@@ -91,7 +91,7 @@ const testGenerationFix = async () => {
     const generationResponse = await axios.post(
       `${API_BASE}/generations/${projectId}/start`,
       {
-        hugoTheme: 'business-pro',
+        hugoTheme: 'ananke',
         contentOptions: { tone: 'professional' }
       },
       { headers: { Authorization: `Bearer ${authToken}` } }
