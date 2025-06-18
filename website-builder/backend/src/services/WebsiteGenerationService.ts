@@ -12,7 +12,6 @@ import {
   GenerationValidationError
 } from '../types/generation';
 import * as fs from 'fs-extra';
-import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import archiver from 'archiver';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,7 +36,7 @@ interface WebhookPayload {
 interface GenerationOptions {
   projectId: string;
   userId: string;
-  hugoTheme?: string; // Made optional for auto-detection
+  hugoTheme?: string;
   customizations?: {
     colors?: Record<string, string>;
     fonts?: Record<string, string>;
@@ -49,7 +48,7 @@ interface GenerationOptions {
     length?: 'short' | 'medium' | 'long';
     includeSEO?: boolean;
   };
-  autoDetectTheme?: boolean; // NEW: Flag to enable auto-detection
+  autoDetectTheme?: boolean;
 }
 
 interface GenerationProgress {
@@ -72,781 +71,209 @@ interface GenerationResult {
 export class WebsiteGenerationService {
   private prisma: PrismaClient;
   private outputDir: string;
-  private tempDir: string;
-  private themeDetector: ThemeDetectionService;
+  private themeDetection: ThemeDetectionService;
 
   constructor() {
-    this.prisma = db.getClient();
+    this.prisma = db;
     this.outputDir = path.join(process.cwd(), 'generated-sites');
-    this.tempDir = path.join(process.cwd(), 'temp-generation');
-    this.themeDetector = new ThemeDetectionService();
-    this.ensureDirectories();
+    this.themeDetection = new ThemeDetectionService();
+    
+    // Ensure output directory exists
+    fs.ensureDirSync(this.outputDir);
   }
 
-  private async ensureDirectories(): Promise<void> {
-    await fs.ensureDir(this.outputDir);
-    await fs.ensureDir(this.tempDir);
-  }  /**
-   * UPDATED: Auto-detect theme if not provided
+  /**
+   * Start website generation process
    */
-  async startGeneration(options: GenerationOptions): Promise<string> {
+  async startGeneration(options: GenerationOptions): Promise<GenerationResult> {
+    const { projectId, userId, hugoTheme, customizations, contentOptions } = options;
+    
     try {
-      // Validate options
-      validateGenerationOptions(options);
-
-      // Get project with wizard data
-      const project = await this.getProjectWithWizardData(options.projectId, options.userId);      // AUTO-DETECT THEME if enabled or no theme provided
-      let selectedTheme = options.hugoTheme;
-      let themeExplanation = '';
-        if ((!selectedTheme || options.autoDetectTheme) && project.wizardData) {
-        console.log('🤖 Auto-detecting theme based on project data...');
-        try {
-          const recommendation = await this.themeDetector.detectTheme(project.wizardData);
-          selectedTheme = recommendation.themeId;
-          themeExplanation = this.themeDetector.getThemeExplanation(recommendation);
-          
-          console.log(`✅ Auto-selected theme: ${selectedTheme} (${recommendation.confidence}% confidence)`);
-        } catch (themeError) {
-          console.error('❌ Theme detection failed:', themeError);
-          console.log('⚠️ Falling back to default theme selection');
-          // Continue without theme detection - will use fallback logic below
-        }
+      // Validate generation options
+      const validationResult = validateGenerationOptions(options);
+      if (!validationResult.isValid) {
+        throw new GenerationValidationError(
+          'Invalid generation options',
+          validationResult.errors
+        );
       }
 
-      // Fallback to default theme if still no theme
-      if (!selectedTheme) {
-        selectedTheme = 'ananke';
-        console.log('⚠️ No theme detected, using default: ananke');
-      }      // AUTO-DETECT COLOR SCHEME if not provided
-      let colorScheme = options.customizations?.colors;
-      if (!colorScheme && project.wizardData) {
-        try {
-          const detectedColors = this.themeDetector.detectColorScheme(project.wizardData, selectedTheme);
-          colorScheme = {
-            primary: detectedColors.primary,
-            secondary: detectedColors.secondary,
-            accent: detectedColors.accent,
-            background: detectedColors.background,
-            text: detectedColors.text          };
-          console.log('✅ Auto-detected color scheme:', colorScheme);
-        } catch (colorError) {
-          console.error('❌ Color scheme detection failed:', colorError);
-          console.log('⚠️ Using default color scheme');
-          // Will use default colors from theme
-        }
-      }
-
-      // Create generation record with detected theme
-      const generation = await this.prisma.siteGeneration.create({
-        data: {
-          projectId: options.projectId,
-          status: SiteGenerationStatus.PENDING,
-          hugoTheme: selectedTheme,
-          startedAt: new Date(),
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      // Check if project exists and belongs to user
+      const project = await this.prisma.project.findFirst({
+        where: {
+          id: projectId,
+          userId: userId,
+        },
+        include: {
+          wizardSteps: true,
         },
       });
 
-      // Send webhook notification
-      await this.sendWebhookNotification({
-        event: 'started',
-        generationId: generation.id,
-        projectId: options.projectId,
-        userId: options.userId,
-        status: SiteGenerationStatus.PENDING,
-        timestamp: new Date().toISOString(),
-      });      // Start async generation process with auto-detected theme
-      const updatedOptions: GenerationOptions & { hugoTheme: string } = {
-        ...options,
-        hugoTheme: selectedTheme,
-        customizations: {
-          ...options.customizations,
-          colors: colorScheme || options.customizations?.colors
-        }
-      };
+      if (!project) {
+        throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+      }
 
-      this.processGeneration(generation.id, project, updatedOptions).catch((error) => {
-        console.error(`Generation ${generation.id} failed:`, error);
-        this.updateGenerationStatus(generation.id, SiteGenerationStatus.FAILED, {
-          errorLog: error instanceof Error ? error.message : String(error),
+      if (!project.isCompleted) {
+        throw new AppError('Project is not completed', 400, 'PROJECT_NOT_COMPLETED');
+      }
+
+      // Check for existing active generation
+      const existingGeneration = await this.prisma.siteGeneration.findFirst({
+        where: {
+          projectId,
+          status: {
+            in: [SiteGenerationStatus.PENDING, SiteGenerationStatus.PROCESSING],
+          },
+        },
+      });
+
+      if (existingGeneration) {
+        throw new AppError(
+          'Generation already in progress for this project',
+          409,
+          'GENERATION_IN_PROGRESS'
+        );
+      }
+
+      // Create generation record with expiration (7 days from now)
+      const generation = await this.prisma.siteGeneration.create({
+        data: {
+          projectId,
+          hugoTheme: hugoTheme || 'ananke',
+          status: SiteGenerationStatus.PENDING,
+          startedAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        },
+      });
+
+      // Start processing asynchronously
+      setImmediate(() => {
+        this.processGeneration(generation.id, project, {
+          hugoTheme: hugoTheme || 'ananke',
+          customizations,
+          contentOptions,
+        }).catch((error) => {
+          console.error(`Generation ${generation.id} failed:`, error);
         });
       });
 
-      return generation.id;
-    } catch (error) {
-      if (error instanceof AppError || error instanceof GenerationValidationError) throw error;
-      throw new AppError('Failed to start generation', 500, 'GENERATION_START_ERROR');
-    }
-  }
-  /**
-   * Get project with wizard data - helper method
-   */
-  private async getProjectWithWizardData(projectId: string, userId: string): Promise<Project & { wizardData: any; wizardSteps: any[] }> {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: userId,
-      },
-      include: {
-        wizardSteps: true,
-      },
-    });
-
-    console.log('🔍 Generation service - Project lookup:', {
-      projectId: projectId,
-      userId: userId,
-      found: !!project,
-      isCompleted: project?.isCompleted,
-      hasWizardData: !!project?.wizardData
-    });
-
-    if (!project) {
-      throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
-    }
-
-    if (!project.isCompleted) {
-      console.log('❌ Project not completed:', {
-        projectId: project.id,
-        isCompleted: project.isCompleted,
-        currentStep: project.currentStep,
-        wizardStepsCount: project.wizardSteps?.length
+      // Send webhook notification for generation start
+      await this.sendWebhookNotification({
+        event: 'started',
+        generationId: generation.id,
+        projectId,
+        userId,
+        status: SiteGenerationStatus.PENDING,
+        timestamp: new Date().toISOString(),
       });
-      throw new AppError('Project wizard is not completed', 400, 'WIZARD_INCOMPLETE');
-    }
-
-    return project as Project & { wizardData: any; wizardSteps: any[] };
-  }
-
-  /**
-   * Get generation status and progress
-   */
-  async getGenerationStatus(generationId: string, userId: string): Promise<GenerationResult> {
-    try {
-      const generation = await this.prisma.siteGeneration.findFirst({
-        where: {
-          id: generationId,
-          project: {
-            userId: userId,
-          },
-        },
-        include: {
-          project: true,
-        },
-      });
-
-      if (!generation) {
-        throw new AppError('Generation not found', 404, 'GENERATION_NOT_FOUND');
-      }
 
       return {
         id: generation.id,
         status: generation.status,
-        siteUrl: generation.siteUrl || undefined,
-        fileSize: generation.fileSize || undefined,
-        fileCount: generation.fileCount || undefined,
-        generationTime: generation.generationTime || undefined,
-        errors: generation.errorLog ? [generation.errorLog] : undefined,
-      };    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError('Failed to get generation status', 500, 'GENERATION_STATUS_ERROR');
-    }
-  }
-
-  /**
-   * Get user's generation history
-   */
-  async getGenerationHistory(userId: string, page: number = 1, pageSize: number = 10): Promise<{
-    generations: GenerationResult[];
-    pagination: {
-      page: number;
-      pageSize: number;
-      total: number;
-      totalPages: number;
-    };
-  }> {
-    try {
-      const skip = (page - 1) * pageSize;
-
-      const [generations, total] = await Promise.all([
-        this.prisma.siteGeneration.findMany({
-          where: {
-            project: {
-              userId: userId,
-            },
-          },
-          include: {
-            project: {
-              select: {
-                name: true,
-                slug: true,
-              },
-            },
-          },
-          orderBy: {
-            startedAt: 'desc',
-          },
-          skip,
-          take: pageSize,
-        }),
-        this.prisma.siteGeneration.count({
-          where: {
-            project: {
-              userId: userId,
-            },
-          },
-        }),
-      ]);
-
-      const results: GenerationResult[] = generations.map(gen => ({
-        id: gen.id,
-        status: gen.status,
-        siteUrl: gen.siteUrl || undefined,
-        fileSize: gen.fileSize || undefined,
-        fileCount: gen.fileCount || undefined,
-        generationTime: gen.generationTime || undefined,
-        errors: gen.errorLog ? [gen.errorLog] : undefined,
-      }));
-
-      return {
-        generations: results,
-        pagination: {
-          page,
-          pageSize,
-          total,
-          totalPages: Math.ceil(total / pageSize),
-        },
-      };    } catch (error) {
-      throw new AppError('Failed to get generation history', 500, 'GENERATION_HISTORY_ERROR');
-    }
-  }
-
-  /**
-   * Download generated website
-   */
-  async downloadGeneration(generationId: string, userId: string): Promise<{
-    filePath: string;
-    fileName: string;
-    mimeType: string;
-  }> {
-    try {
-      const generation = await this.prisma.siteGeneration.findFirst({
-        where: {
-          id: generationId,
-          project: {
-            userId: userId,
-          },
-          status: SiteGenerationStatus.COMPLETED,
-        },
-        include: {
-          project: true,
-        },
-      });
-
-      if (!generation) {
-        throw new AppError('Generation not found or not completed', 404, 'GENERATION_NOT_AVAILABLE');
-      }
-
-      if (generation.expiresAt && generation.expiresAt < new Date()) {
-        throw new AppError('Download link has expired', 410, 'DOWNLOAD_EXPIRED');
-      }
-
-      if (!generation.siteUrl) {
-        throw new AppError('Generated site file not found', 404, 'SITE_FILE_NOT_FOUND');
-      }
-
-      const filePath = path.join(this.outputDir, generation.siteUrl);
-      
-      if (!await fs.pathExists(filePath)) {
-        throw new AppError('Generated site file not found on disk', 404, 'SITE_FILE_MISSING');
-      }
-
-      return {
-        filePath,
-        fileName: `${generation.project.slug}-website.zip`,
-        mimeType: 'application/zip',
-      };    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError('Failed to prepare download', 500, 'DOWNLOAD_PREPARATION_ERROR');
-    }
-  }
-
-  /**
-   * Cancel ongoing generation
-   */
-  async cancelGeneration(generationId: string, userId: string): Promise<boolean> {
-    try {
-      const generation = await this.prisma.siteGeneration.findFirst({
-        where: {
-          id: generationId,
-          project: {
-            userId: userId,
-          },
-          status: {
-            in: [SiteGenerationStatus.PENDING, SiteGenerationStatus.GENERATING_CONTENT, SiteGenerationStatus.BUILDING_SITE],
-          },
-        },
-      });
-
-      if (!generation) {
-        throw new AppError('Generation not found or cannot be cancelled', 404, 'GENERATION_NOT_CANCELLABLE');
-      }
-
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.FAILED, {
-        errorLog: 'Generation cancelled by user',
-      });
-
-      return true;    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError('Failed to cancel generation', 500, 'GENERATION_CANCEL_ERROR');
-    }
-  }
-
-  /**
-   * Clean up expired generations
-   */
-  async cleanupExpiredGenerations(): Promise<number> {
-    try {
-      const expiredGenerations = await this.prisma.siteGeneration.findMany({
-        where: {
-          expiresAt: {
-            lt: new Date(),
-          },
-          status: SiteGenerationStatus.COMPLETED,
-        },
-      });
-
-      let cleanedCount = 0;
-
-      for (const generation of expiredGenerations) {
-        try {
-          if (generation.siteUrl) {
-            const filePath = path.join(this.outputDir, generation.siteUrl);
-            await fs.remove(filePath);
-          }
-
-          await this.prisma.siteGeneration.update({
-            where: { id: generation.id },
-            data: {
-              status: SiteGenerationStatus.EXPIRED,
-              siteUrl: null,
-            },
-          });
-
-          cleanedCount++;
-        } catch (error) {
-          console.error(`Failed to cleanup generation ${generation.id}:`, error);
-        }
-      }
-
-      return cleanedCount;    } catch (error) {
-      throw new AppError('Failed to cleanup expired generations', 500, 'CLEANUP_ERROR');
-    }
-  }
-  /**
-   * Check if Hugo is installed and accessible
-   */
-  private async checkHugoInstallation(): Promise<void> {
-    try {
-      // Check if Hugo is installed and accessible
-      await execAsync('hugo version');
-    } catch (error) {
-      throw new Error('Hugo is not installed or not accessible');
-    }
-  }
-
-  /**
-   * Install Hugo theme
-   */
-  private async installTheme(siteData: any, options: GenerationOptions & { hugoTheme: string }): Promise<void> {
-    const themesDir = path.join(siteData.siteDir, 'themes');
-    const themeDir = path.join(themesDir, options.hugoTheme);
-    
-    try {
-      // Create themes directory
-      await fsPromises.mkdir(themesDir, { recursive: true });
-      
-      // Get theme URL from verified themes
-      const themeUrl = this.getThemeUrl(options.hugoTheme);
-      
-      // Clone theme
-      await execAsync(`git clone ${themeUrl} ${options.hugoTheme}`, { cwd: themesDir });
-      
-      // Remove .git directory to avoid conflicts
-      const gitDir = path.join(themeDir, '.git');
-      try {
-        await fsPromises.access(gitDir);
-        await fsPromises.rm(gitDir, { recursive: true, force: true });
-      } catch (err) {
-        // .git directory doesn't exist, no need to remove
-      }
-      
-    } catch (error) {
-      throw new Error(`Failed to install theme: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-    /**
-   * Get theme URL from theme ID
-   */  private getThemeUrl(themeName: string): string {
-    const defaultThemeUrl = 'https://github.com/theNewDynamic/gohugo-theme-ananke.git';
-    
-    const themeUrls = {
-      'ananke': 'https://github.com/theNewDynamic/gohugo-theme-ananke.git',
-      'papermod': 'https://github.com/adityatelange/hugo-PaperMod.git',
-      'bigspring': 'https://github.com/gethugothemes/bigspring-light-hugo.git',
-      'restaurant': 'https://github.com/themefisher/restaurant-hugo.git',
-      'hargo': 'https://github.com/gethugothemes/hargo-hugo.git',
-      'terminal': 'https://github.com/panr/hugo-theme-terminal.git',
-      'clarity': 'https://github.com/chipzoller/hugo-clarity.git',
-      'mainroad': 'https://github.com/Vimux/Mainroad.git',
-    } as const;
-    
-    const lowerThemeName = themeName.toLowerCase();
-    return themeUrls[lowerThemeName as keyof typeof themeUrls] || defaultThemeUrl;
-  }
-
-  /**
-   * Create a new Hugo site
-   */
-  private async createHugoSite(
-    generationId: string,
-    project: Project & { wizardSteps: any[] },
-    options: GenerationOptions & { hugoTheme: string }
-  ): Promise<any> {
-    const siteName = `site-${generationId}`;
-    const outputDir = path.join(process.cwd(), 'temp', 'generations', generationId);
-    const siteDir = path.join(outputDir, siteName);
-    
-    try {
-      // Create output directory
-      await fsPromises.mkdir(outputDir, { recursive: true });
-      
-      // Create new Hugo site
-      await execAsync(`hugo new site ${siteName}`, { cwd: outputDir });
-      
-      return {
-        generationId,
-        siteName,
-        outputDir,
-        siteDir,
-        project
       };
     } catch (error) {
-      throw new Error(`Failed to create Hugo site: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof AppError || error instanceof GenerationValidationError) {
+        throw error;
+      }
+      throw new AppError('Failed to start generation', 500, 'GENERATION_START_ERROR');
     }
   }
 
   /**
-   * Generate AI content and populate files
-   */
-  private async generateAndPopulateContent(
-    siteData: any,
-    project: Project & { wizardSteps: any[] },
-    options: GenerationOptions & { hugoTheme: string }
-  ): Promise<void> {
-    const wizardData = project.wizardData as any;
-    
-    try {
-      // Generate AI content for each section
-      const selectedSections = wizardData?.websiteStructure?.selectedSections || ['home', 'about', 'services', 'contact'];
-      
-      for (const section of selectedSections) {
-        // Generate AI content for this section
-        const aiContent = await this.generateAIContentForSection(section, wizardData, options);
-        
-        // Populate the corresponding file
-        const fileName = section === 'home' ? '_index.md' : `${section}.md`;
-        const filePath = path.join(siteData.siteDir, 'content', fileName);
-        
-        // Read existing file
-        let existingContent = await fsPromises.readFile(filePath, 'utf8');
-        
-        // Append AI content
-        existingContent += aiContent;
-        
-        // Write back to file
-        await fsPromises.writeFile(filePath, existingContent);
-      }
-      
-      // Generate and update Hugo config
-      await this.generateHugoConfig(siteData, wizardData, options);
-      
-    } catch (error) {
-      throw new Error(`Failed to generate and populate content: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
-   * Generate AI content for a specific section
-   */
-  private async generateAIContentForSection(
-    section: string,
-    wizardData: any,
-    options: GenerationOptions & { hugoTheme: string }
-  ): Promise<string> {
-    // This should integrate with your actual AI service
-    // For now, returning structured content based on section
-    
-    const businessName = wizardData?.businessInfo?.name || 'Your Business';
-    const businessDescription = wizardData?.businessInfo?.description || 'Professional business services';
-    
-    switch (section) {
-      case 'home':
-        return `
-# Welcome to ${businessName}
-
-${businessDescription}
-
-## What We Do
-
-We provide exceptional services to help your business grow and succeed.
-
-## Why Choose Us
-
-- Professional expertise
-- Quality service
-- Customer satisfaction
-- Competitive pricing
-
-[Get Started](#contact)
-`;
-      
-      case 'about':
-        return `
-# About ${businessName}
-
-${businessDescription}
-
-## Our Story
-
-Founded with a vision to provide exceptional services, ${businessName} has been serving clients with dedication and professionalism.
-
-## Our Mission
-
-To deliver outstanding results while maintaining the highest standards of quality and customer service.
-
-## Our Values
-
-- Integrity
-- Excellence
-- Innovation
-- Customer Focus
-`;
-      
-      case 'services':
-        return `
-# Our Services
-
-We offer a comprehensive range of services designed to meet your needs.
-
-## Service 1
-Description of your first service offering.
-
-## Service 2
-Description of your second service offering.
-
-## Service 3
-Description of your third service offering.
-
-[Contact us](#contact) to learn more about our services.
-`;
-      
-      case 'contact':
-        return `
-# Contact Us
-
-Get in touch with us today to discuss your needs.
-
-## Contact Information
-
-- **Email:** info@${businessName.toLowerCase().replace(/\s+/g, '')}.com
-- **Phone:** (555) 123-4567
-- **Address:** 123 Business Street, City, State 12345
-
-## Business Hours
-
-- Monday - Friday: 9:00 AM - 6:00 PM
-- Saturday: 10:00 AM - 4:00 PM
-- Sunday: Closed
-
-## Contact Form
-
-[Contact form will be implemented based on theme capabilities]
-`;
-      
-      default:
-        return `
-# ${this.capitalize(section)}
-
-Content for ${section} section will be generated here.
-`;
-    }
-  }
-
-  /**
-   * Generate Hugo config file
-   */
-  private async generateHugoConfig(
-    siteData: any, 
-    wizardData: any, 
-    options: GenerationOptions & { hugoTheme: string }
-  ): Promise<void> {
-    const businessName = wizardData?.businessInfo?.name || 'Your Business';
-    const businessDescription = wizardData?.businessInfo?.description || 'Professional business website';
-    
-    const config = {
-      baseURL: 'https://example.com',
-      languageCode: 'en-us',
-      title: businessName,
-      description: businessDescription,
-      theme: options.hugoTheme,
-      
-      params: {
-        description: businessDescription,
-        author: businessName,
-        ...(wizardData?.themeConfig || {})
-      },
-      
-      menu: {
-        main: this.generateMenuFromSections(wizardData?.websiteStructure?.selectedSections || ['home', 'about', 'services', 'contact'])
-      },
-      
-      markup: {
-        goldmark: {
-          renderer: {
-            unsafe: true
-          }
-        }
-      }
-    };
-    
-    const configPath = path.join(siteData.siteDir, 'hugo.yaml');
-    await fsPromises.writeFile(configPath, yaml.dump(config));
-  }
-  
-  /**
-   * Generate menu items from sections
-   */
-  private generateMenuFromSections(sections: string[]): Array<{name: string, url: string, weight: number}> {
-    return sections.map((section, index) => ({
-      name: this.capitalize(section),
-      url: section === 'home' ? '/' : `/${section}/`,
-      weight: index + 1
-    }));
-  }
-
-  /**
-   * Create file structure for Hugo site
-   */
-  private async createFileStructure(siteData: any, project: Project & { wizardSteps: any[] }): Promise<void> {
-    const wizardData = project.wizardData as any;
-    
-    try {
-      // Create content directories
-      const contentDir = path.join(siteData.siteDir, 'content');
-      await fsPromises.mkdir(contentDir, { recursive: true });
-      
-      // Create static directories
-      const staticDir = path.join(siteData.siteDir, 'static');
-      const staticSubDirs = ['images', 'css', 'js'];
-      
-      for (const subDir of staticSubDirs) {
-        await fsPromises.mkdir(path.join(staticDir, subDir), { recursive: true });
-      }
-      
-      // Create data directory
-      const dataDir = path.join(siteData.siteDir, 'data');
-      await fsPromises.mkdir(dataDir, { recursive: true });
-      
-      // Create empty content files based on wizard structure
-      const selectedSections = wizardData?.websiteStructure?.selectedSections || ['home', 'about', 'services', 'contact'];
-      
-      for (const section of selectedSections) {
-        const fileName = section === 'home' ? '_index.md' : `${section}.md`;
-        const filePath = path.join(contentDir, fileName);
-        
-        // Create empty file with basic front matter
-        const frontMatter = `---
-title: "${this.capitalize(section)}"
-date: ${new Date().toISOString()}
-draft: false
----
-
-`;
-        await fsPromises.writeFile(filePath, frontMatter);
-      }
-      
-    } catch (error) {
-      throw new Error(`Failed to create file structure: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  
-  /**
-   * Capitalize first letter of a string
-   */
-  private capitalize(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
-  /**
-   * Process generation workflow with corrected sequence
+   * Process generation (internal method)
    */
   private async processGeneration(
     generationId: string,
     project: Project & { wizardSteps: any[] },
-    options: GenerationOptions & { hugoTheme: string }
+    options: {
+      hugoTheme: string;
+      customizations?: any;
+      contentOptions?: any;
+    }
   ): Promise<void> {
     const startTime = Date.now();
+    
+    try {
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
 
-    try {      // Step 1: Check Hugo Installation
-      await this.updateGenerationStatus(generationId, 'INITIALIZING' as any);
-      await this.checkHugoInstallation();
+      // Step 1: Auto-detect theme if needed
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
 
-      // Step 2: Create Hugo Site Structure
-      await this.updateGenerationStatus(generationId, 'BUILDING_STRUCTURE' as any);
-      const siteData = await this.createHugoSite(generationId, project, options);
+      // Step 2: Generate AI content
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
+      const generatedContent = await this.generateAIContent(project, options);
 
-      // Step 3: Install Theme
-      await this.updateGenerationStatus(generationId, 'APPLYING_THEME' as any);
-      await this.installTheme(siteData, options);
+      // Step 3: Create site structure
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
+      const siteData = await this.createSiteStructure(generationId, project);
 
-      // Step 4: Create File Structure
-      await this.updateGenerationStatus(generationId, 'BUILDING_STRUCTURE' as any);
+      // Step 4: Create file structure
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
       await this.createFileStructure(siteData, project);
 
-      // Step 5: Generate AI Content and Populate Files
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.GENERATING_CONTENT);
-      const aiStartTime = Date.now();
-      await this.generateAndPopulateContent(siteData, project, options);
-      const aiProcessingTime = Date.now() - aiStartTime;
+      // Step 5: Build Hugo site
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
+      const buildResult = await this.buildHugoSite(siteData);
 
-      // Step 6: Build Hugo Site
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.BUILDING_SITE);
-      const buildStartTime = Date.now();
-      await this.buildHugoSite(siteData);
-      const hugoBuildTime = Date.now() - buildStartTime;
+      // Step 6: Package site
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
+      const packageResult = await this.packageSite(generationId, buildResult);
 
-      // Step 7: Package Site
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PACKAGING);
-      const packagedSite = await this.packageSite(generationId, siteData);
+      const generationTime = Date.now() - startTime;
 
-      // Step 8: Complete
-      const totalTime = Date.now() - startTime;
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.COMPLETED, {
-        siteUrl: packagedSite.fileName,
-        fileSize: packagedSite.fileSize,
-        fileCount: packagedSite.fileCount,
-        generationTime: totalTime,
-        aiProcessingTime,
-        hugoBuildTime,
-        completedAt: new Date(),
+      // Step 7: Complete generation
+      await this.updateGenerationStatus(
+        generationId,
+        SiteGenerationStatus.COMPLETED,
+        {
+          siteUrl: packageResult.fileName,
+          fileSize: packageResult.fileSize,
+          fileCount: packageResult.fileCount,
+          generationTime,
+          completedAt: new Date(),
+        }
+      );
+
+      // Send completion webhook
+      await this.sendWebhookNotification({
+        event: 'completed',
+        generationId,
+        projectId: project.id,
+        userId: project.userId,
+        status: SiteGenerationStatus.COMPLETED,
+        timestamp: new Date().toISOString(),
+        data: {
+          generationTime,
+          fileSize: packageResult.fileSize,
+          fileCount: packageResult.fileCount,
+        },
       });
 
-    } catch (error) {      await this.updateGenerationStatus(generationId, SiteGenerationStatus.FAILED, {
-        errorLog: error instanceof Error ? error.message : String(error),
+    } catch (error) {
+      await this.updateGenerationStatus(
+        generationId,
+        SiteGenerationStatus.FAILED,
+        {
+          errorLog: error instanceof Error ? error.message : String(error),
+        }
+      );
+
+      // Send failure webhook
+      await this.sendWebhookNotification({
+        event: 'failed',
+        generationId,
+        projectId: project.id,
+        userId: project.userId,
+        status: SiteGenerationStatus.FAILED,
+        timestamp: new Date().toISOString(),
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+        },
       });
       throw error;
     }
   }
+
   /**
    * Generate AI content for the website
    */
@@ -884,9 +311,87 @@ draft: false
       },
     };
   }
+
+  /**
+   * Create site structure
+   */
+  private async createSiteStructure(generationId: string, project: Project): Promise<any> {
+    const siteId = `site-${generationId}`;
+    const siteDir = path.join(this.outputDir, siteId);
+
+    // Create site directory
+    await fs.ensureDir(siteDir);
+
+    return {
+      siteId,
+      siteDir,
+      project,
+    };
+  }
+
+  /**
+   * Generate navigation menu based on wizard data
+   */
+  private generateNavigation(wizardData: any): any[] {
+    const sections = wizardData?.websiteStructure?.selectedSections || ['home', 'about', 'services', 'contact'];
+    
+    return sections.map((section: string, index: number) => ({
+      name: this.capitalize(section),
+      url: section === 'home' ? '/' : `/${section}/`,
+      weight: index + 1
+    }));
+  }
+
+  /**
+   * Create file structure for Hugo site
+   */
+  private async createFileStructure(siteData: any, project: Project & { wizardSteps: any[] }): Promise<void> {
+    const wizardData = project.wizardData as any;
+    
+    try {
+      // Create content directories
+      const contentDir = path.join(siteData.siteDir, 'content');
+      await fs.ensureDir(contentDir);
+      
+      // Create static directories
+      const staticDir = path.join(siteData.siteDir, 'static');
+      const staticSubDirs = ['images', 'css', 'js'];
+      
+      for (const subDir of staticSubDirs) {
+        await fs.ensureDir(path.join(staticDir, subDir));
+      }
+      
+      // Create data directory
+      const dataDir = path.join(siteData.siteDir, 'data');
+      await fs.ensureDir(dataDir);
+      
+      // Create empty content files based on wizard structure
+      const selectedSections = wizardData?.websiteStructure?.selectedSections || ['home', 'about', 'services', 'contact'];
+      
+      for (const section of selectedSections) {
+        const fileName = section === 'home' ? '_index.md' : `${section}.md`;
+        const filePath = path.join(contentDir, fileName);
+        
+        // Create empty file with basic front matter
+        const frontMatter = `---
+title: "${this.capitalize(section)}"
+date: ${new Date().toISOString()}
+draft: false
+---
+
+`;
+        await fs.writeFile(filePath, frontMatter);
+      }
+      
+    } catch (error) {
+      throw new Error(`Failed to create file structure: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /**
    * Build Hugo site using Hugo CLI
-   */  private async buildHugoSite(siteData: any): Promise<{ sitePath: string; fileCount: number }> {
+   */
+  private async buildHugoSite(siteData: any): Promise<{ sitePath: string; fileCount: number }> {
     try {
       // Build the site using Hugo CLI
       await execAsync('hugo', { cwd: siteData.siteDir });
@@ -959,25 +464,39 @@ draft: false
       },
     });
   }
+
   /**
    * Count files in directory recursively
+   * FIXED: Use fs-extra methods instead of Node.js fs
    */
   private async countFiles(dirPath: string): Promise<number> {
     let count = 0;
     
-    const items = await fs.readdir(dirPath);
-    for (const item of items) {
-      const itemPath = path.join(dirPath, item);
-      const stats = await fs.stat(itemPath);
-      
-      if (stats.isDirectory()) {
-        count += await this.countFiles(itemPath);
-      } else {
-        count++;
+    try {
+      // Check if directory exists
+      if (!(await fs.pathExists(dirPath))) {
+        return 0;
       }
+
+      // Use fs-extra's readdir method
+      const items = await fs.readdir(dirPath);
+      
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item);
+        const stats = await fs.stat(itemPath);
+        
+        if (stats.isDirectory()) {
+          count += await this.countFiles(itemPath);
+        } else {
+          count++;
+        }
+      }
+      
+      return count;
+    } catch (error) {
+      console.error(`Error counting files in ${dirPath}:`, error);
+      return 0;
     }
-    
-    return count;
   }
 
   /**
@@ -990,6 +509,228 @@ draft: false
       console.error('Failed to send webhook notification:', error);
       // Don't throw error to avoid breaking the generation process
     }
+  }
+
+  /**
+   * Cancel ongoing generation
+   */
+  async cancelGeneration(generationId: string, userId: string): Promise<boolean> {
+    try {
+      const generation = await this.prisma.siteGeneration.findFirst({
+        where: {
+          id: generationId,
+          project: {
+            userId: userId,
+          },
+          status: {
+            in: [SiteGenerationStatus.PENDING, SiteGenerationStatus.PROCESSING],
+          },
+        },
+        include: {
+          project: true,
+        },
+      });
+
+      if (!generation) {
+        return false;
+      }
+
+      await this.updateGenerationStatus(generationId, SiteGenerationStatus.FAILED, {
+        errorLog: 'Generation cancelled by user',
+      });
+
+      // Send cancellation webhook
+      await this.sendWebhookNotification({
+        event: 'failed',
+        generationId,
+        projectId: generation.projectId,
+        userId,
+        status: SiteGenerationStatus.FAILED,
+        timestamp: new Date().toISOString(),
+        data: {
+          cancelled: true,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      throw new AppError('Failed to cancel generation', 500, 'GENERATION_CANCEL_ERROR');
+    }
+  }
+
+  /**
+   * Get generation status
+   */
+  async getGenerationStatus(generationId: string, userId: string): Promise<GenerationResult> {
+    try {
+      const generation = await this.prisma.siteGeneration.findFirst({
+        where: {
+          id: generationId,
+          project: {
+            userId: userId,
+          },
+        },
+        include: {
+          project: true,
+        },
+      });
+
+      if (!generation) {
+        throw new AppError('Generation not found', 404, 'GENERATION_NOT_FOUND');
+      }
+
+      return {
+        id: generation.id,
+        status: generation.status,
+        siteUrl: generation.siteUrl || undefined,
+        fileSize: generation.fileSize || undefined,
+        fileCount: generation.fileCount || undefined,
+        generationTime: generation.generationTime || undefined,
+        errors: generation.errorLog ? [generation.errorLog] : undefined,
+      };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to get generation status', 500, 'GENERATION_STATUS_ERROR');
+    }
+  }
+
+  /**
+   * Get generation history for user
+   */
+  async getGenerationHistory(
+    userId: string,
+    page: number = 1,
+    pageSize: number = 10
+  ): Promise<{
+    generations: any[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    try {
+      const offset = (page - 1) * pageSize;
+
+      const [generations, total] = await Promise.all([
+        this.prisma.siteGeneration.findMany({
+          where: {
+            project: {
+              userId: userId,
+            },
+          },
+          include: {
+            project: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+          orderBy: {
+            startedAt: 'desc',
+          },
+          skip: offset,
+          take: pageSize,
+        }),
+        this.prisma.siteGeneration.count({
+          where: {
+            project: {
+              userId: userId,
+            },
+          },
+        }),
+      ]);
+
+      const results = generations.map((gen) => ({
+        id: gen.id,
+        projectId: gen.projectId,
+        projectName: gen.project.name,
+        projectSlug: gen.project.slug,
+        status: gen.status,
+        hugoTheme: gen.hugoTheme,
+        startedAt: gen.startedAt,
+        completedAt: gen.completedAt,
+        generationTime: gen.generationTime,
+        fileSize: gen.fileSize,
+        fileCount: gen.fileCount,
+        siteUrl: gen.siteUrl,
+        expiresAt: gen.expiresAt,
+        errors: gen.errorLog ? [gen.errorLog] : undefined,
+      }));
+
+      return {
+        generations: results,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      };
+    } catch (error) {
+      throw new AppError('Failed to get generation history', 500, 'GENERATION_HISTORY_ERROR');
+    }
+  }
+
+  /**
+   * Download generated website
+   */
+  async downloadGeneration(generationId: string, userId: string): Promise<{
+    filePath: string;
+    fileName: string;
+    mimeType: string;
+  }> {
+    try {
+      const generation = await this.prisma.siteGeneration.findFirst({
+        where: {
+          id: generationId,
+          project: {
+            userId: userId,
+          },
+          status: SiteGenerationStatus.COMPLETED,
+        },
+        include: {
+          project: true,
+        },
+      });
+
+      if (!generation) {
+        throw new AppError('Generation not found or not completed', 404, 'GENERATION_NOT_AVAILABLE');
+      }
+
+      if (generation.expiresAt && generation.expiresAt < new Date()) {
+        throw new AppError('Download link has expired', 410, 'DOWNLOAD_EXPIRED');
+      }
+
+      if (!generation.siteUrl) {
+        throw new AppError('Generated site file not found', 404, 'SITE_FILE_NOT_FOUND');
+      }
+
+      const filePath = path.join(this.outputDir, generation.siteUrl);
+      
+      if (!(await fs.pathExists(filePath))) {
+        throw new AppError('Generated site file not found on disk', 404, 'SITE_FILE_MISSING');
+      }
+
+      return {
+        filePath,
+        fileName: `${generation.project.slug}-website.zip`,
+        mimeType: 'application/zip',
+      };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to download generation', 500, 'GENERATION_DOWNLOAD_ERROR');
+    }
+  }
+
+  /**
+   * Utility method to capitalize strings
+   */
+  private capitalize(str: string): string {
+    return str.charAt(0).toUpperCase() + str.slice(1);
   }
 }
 
