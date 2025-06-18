@@ -635,107 +635,102 @@ router.get(
   })
 );
 
+// POST /generations/detect-theme-wizard - Detect theme from wizard data (no project needed)
 /**
- * GET /generations/detect-theme/:projectId
- * Preview what theme would be auto-detected for a project
  * @swagger
- * /api/generations/detect-theme/{projectId}:
- *   get:
- *     summary: Detect theme for project
- *     description: Preview what theme would be automatically detected for a project based on wizard data
+ * /api/generations/detect-theme-wizard:
+ *   post:
+ *     summary: Detect theme based on wizard data without saving project
+ *     description: Analyzes wizard data to recommend theme without requiring saved project
  *     tags: [Website Generation]
  *     security:
  *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: projectId
- *         required: true
- *         schema:
- *           type: string
- *         description: Project ID to detect theme for
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wizardData
+ *             properties:
+ *               wizardData:
+ *                 type: object
+ *                 description: Complete wizard data for theme analysis
  *     responses:
  *       200:
  *         description: Theme recommendation generated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     recommendedTheme:
- *                       type: string
- *                     confidence:
- *                       type: number
- *                     reasons:
- *                       type: array
- *                       items:
- *                         type: string
- *                     explanation:
- *                       type: string
- *                     colorScheme:
- *                       type: object
- *                     fallback:
- *                       type: string
  *       400:
- *         description: Project wizard data not found
- *       404:
- *         description: Project not found
+ *         description: Invalid wizard data
  */
-router.get(
-  '/detect-theme/:projectId',
-  validateParams(generationSchemas.detectThemeParam),
+router.post(
+  '/detect-theme-wizard',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const projectId = req.params.projectId!;
+    const { wizardData } = req.body;
 
-    // Get project with wizard data
-    const project = await db.getClient().project.findFirst({
-      where: { id: projectId, userId: req.user.id },
-    });
-
-    if (!project) {
-      return res.status(404).json({
+    if (!wizardData) {
+      return res.status(400).json({
         success: false,
-        error: { message: 'Project not found', code: 'PROJECT_NOT_FOUND' }
+        error: { message: 'Wizard data is required', code: 'MISSING_WIZARD_DATA' }
       });
     }
 
-    if (!project?.wizardData) {
+    if (!wizardData.websiteType) {
       return res.status(400).json({
         success: false,
-        error: { message: 'Project wizard data not found', code: 'WIZARD_INCOMPLETE' }
+        error: { message: 'Website type is required', code: 'MISSING_WEBSITE_TYPE' }
       });
-    }    // Detect theme
-    console.log('🎨 Starting theme detection for project:', projectId);
-    console.log('📋 Wizard data keys:', Object.keys(project.wizardData || {}));
-    
-    const themeDetector = new ThemeDetectionService();
-    await themeDetector.initialize(); // Make sure themes are loaded
-    
-    const recommendation = await themeDetector.detectTheme(project.wizardData);
-    const colorScheme = themeDetector.detectColorScheme(project.wizardData, recommendation.themeId);
-    const explanation = themeDetector.getThemeExplanation(recommendation);
+    }
 
-    console.log('✅ Theme detection completed:', {
-      recommendedTheme: recommendation.themeId,
-      confidence: recommendation.confidence,
-      reasons: recommendation.reasons?.length || 0
-    });
+    try {
+      console.log('🎨 Starting theme detection with wizard data');
+      console.log('📋 Website type:', wizardData.websiteType?.id);
+      console.log('📋 Business category:', wizardData.businessCategory?.id);
+      
+      // Use the same ThemeDetectionService (algorithmic, not AI)
+      const themeDetector = new ThemeDetectionService();
+      await themeDetector.initialize();
+      
+      const recommendation = await themeDetector.detectTheme(wizardData);
+      const colorScheme = themeDetector.detectColorScheme(wizardData, recommendation.themeId);
+      const explanation = themeDetector.getThemeExplanation(recommendation);
 
-    return res.json({
-      success: true,
-      data: {
+      console.log('✅ Theme detection completed:', {
         recommendedTheme: recommendation.themeId,
         confidence: recommendation.confidence,
-        reasons: recommendation.reasons,
-        explanation,
-        colorScheme,
-        fallback: recommendation.fallback
-      }
-    });
+        reasons: recommendation.reasons?.length || 0
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          recommendedTheme: recommendation.themeId,
+          confidence: recommendation.confidence,
+          reasons: recommendation.reasons,
+          explanation,
+          colorScheme,
+          fallback: recommendation.fallback
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown',
+          method: 'algorithmic_detection', // NOT AI
+          source: 'wizard_data'
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Theme detection failed:', error);
+      
+      return res.status(500).json({
+        success: false,
+        error: { 
+          message: 'Theme detection failed', 
+          code: 'THEME_DETECTION_ERROR',
+          details: error.message 
+        }
+      });
+    }
   })
 );
 

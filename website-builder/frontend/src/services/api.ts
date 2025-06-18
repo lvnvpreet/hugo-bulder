@@ -507,6 +507,28 @@ export const authAPI = {
     ),
 }
 
+// ADD THIS THEME API HELPER
+export const themeAPI = {
+  // For existing projects (current working method)
+  getProjectTheme: (projectId: string) =>
+    api.get(`/generations/detect-theme/${projectId}`),
+  
+  // For wizard data without saving project (replaces AI endpoint)
+  getWizardTheme: (wizardData: any) =>
+    api.post('/generations/detect-theme-wizard', { wizardData }),
+  
+  // Smart detection method
+  detectTheme: (projectId?: string, wizardData?: any) => {
+    if (projectId) {
+      return themeAPI.getProjectTheme(projectId);
+    } else if (wizardData) {
+      return themeAPI.getWizardTheme(wizardData);
+    } else {
+      throw new Error('Either projectId or wizardData is required');
+    }
+  }
+};
+
 export const projectsAPI = {
   getAll: (params?: { page?: number; limit?: number; search?: string }) =>
     api.get<PaginatedResponse<any>>('/projects', params),

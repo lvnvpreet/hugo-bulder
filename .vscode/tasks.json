@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Fix Website Generation and Theme Detection",
+			"type": "shell",
+			"command": "cd d:\\projects\\hugo-bulder\\website-builder\\frontend\\src\\components\\wizard\\steps && copy Step10Summary.fixed.tsx Step10Summary.tsx",
+			"group": "build",
+			"problemMatcher": []
+		}
+	]
+}

@@ -7,86 +7,201 @@ import { api } from '../../../services/api';
 
 export default function Step10Summary() {
   const { data, setGenerationComplete, clearData, isGenerationComplete } = useWizardStore();
-  const [isGenerating, setIsGenerating] = useState(false);  const [showPreview, setShowPreview] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [themeRecommendation, setThemeRecommendation] = useState<any>(null);
-  // New state variables for real API integration
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number>(0);  const [currentStep, setCurrentStep] = useState<string>('');
+  const [progress, setProgress] = useState<number>(0);
+  const [currentStep, setCurrentStep] = useState<string>('');
   const [generationResult, setGenerationResult] = useState<any>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState<boolean>(false);
+  const [isLoadingTheme, setIsLoadingTheme] = useState<boolean>(false);
+
   // Load theme recommendation on component mount
   useEffect(() => {
-    // Only load if we haven't started creating a project yet
-    if (!isCreatingProject && !projectId) {
+    if (!isCreatingProject && !projectId && !themeRecommendation) {
       loadThemeRecommendation();
     }
   }, []); // Empty dependency array to run only once
+
+  // Enhanced theme recommendation loading that tries wizard-first approach
   const loadThemeRecommendation = async () => {
+    setIsLoadingTheme(true);
+    
     try {
-      // Create project first to get projectId if we don't have one
-      let currentProjectId = projectId;
+      console.log('🎨 Loading theme recommendation...');
       
-      if (!currentProjectId && !isCreatingProject) {
-        setIsCreatingProject(true);
+      // METHOD 1: Try to get theme recommendation directly from wizard data (no project needed)
+      if (data.websiteType) {
+        console.log('🔍 Attempting wizard-based theme detection');
         
         try {
-          const projectResponse = await projectsAPI.create({
-            name: data.businessInfo?.name || 'Generated Website',
-            description: data.businessInfo?.description || '',
-            wizardData: data,
-            type: data.websiteType?.category || 'business'
-          });
+          const response = await api.post('/generations/detect-theme-wizard', {
+            wizardData: data
+          }) as any;
           
-          currentProjectId = (projectResponse as any).id || (projectResponse as any).data?.id;
-          setProjectId(currentProjectId);
-          console.log('✅ Project created with ID:', currentProjectId);
-        } catch (createError: any) {
-          console.error('❌ Failed to create project:', createError);
+          console.log('📥 Wizard theme response:', response);
           
-          // If it's a 409 conflict, the project might already exist
-          if (createError?.response?.status === 409) {
-            console.log('⚠️ Project already exists (409 conflict), continuing...');
-            // Try to get the existing project
-            // For now, we'll skip theme recommendation
-            return;
-          } else {
-            throw createError;
+          if (response?.data?.success && response.data.data) {
+            setThemeRecommendation(response.data.data);
+            console.log('✅ Theme recommendation from wizard data:', response.data.data);
+            setIsLoadingTheme(false);
+            return; // Success, no need for project-based detection
           }
-        } finally {
-          setIsCreatingProject(false);
+        } catch (wizardError: any) {
+          console.warn('⚠️ Wizard-based theme detection failed:', wizardError.message);
+          // Continue to fallback method
         }
-      }// Get theme recommendation
-      console.log('🔍 Requesting theme recommendation for project:', currentProjectId);
-      const response = await api.get(`/generations/detect-theme/${currentProjectId}`) as any;
-      console.log('📥 Theme recommendation response:', response);
-      
-      if (response && response.data) {
-        const result = response.data;
-        console.log('📋 Theme recommendation result:', result);
-        
-        if (result.success && result.data) {
-          setThemeRecommendation(result.data);
-          console.log('✅ Theme recommendation set:', result.data);
-        } else {
-          console.warn('⚠️ Theme recommendation API returned success:false or no data:', result);
-        }
-      } else {
-        console.warn('⚠️ Theme recommendation response has no data:', response);
       }
-    } catch (error) {
-      console.error('Failed to load theme recommendation:', error);
-      // Don't show error to user as this is optional
+
+      // METHOD 2: Use fallback theme recommendation (no API calls needed)
+      console.log('🔄 Using fallback theme recommendation');
+      const fallbackTheme = getFallbackTheme();
+      setThemeRecommendation(fallbackTheme);
+      console.log('✅ Fallback theme recommendation set:', fallbackTheme);
+
+    } catch (error: any) {
+      console.error('❌ Failed to load theme recommendation:', error);
+      
+      // Provide fallback theme recommendation based on website type
+      const fallbackTheme = getFallbackTheme();
+      setThemeRecommendation(fallbackTheme);
+      console.log('🔄 Using fallback theme recommendation:', fallbackTheme);
+    } finally {
+      setIsLoadingTheme(false);
     }
-  };  // Wizard data validation function
+  };
+
+  // Fallback theme selection based on wizard data
+  const getFallbackTheme = () => {
+    const websiteType = data.websiteType?.id?.toLowerCase();
+    const businessCategory = data.businessCategory?.id?.toLowerCase();
+    
+    let themeId = 'ananke'; // default
+    let confidence = 60;
+    let reasons = ['Default theme selected'];
+    
+    // Simple logic for fallback theme selection
+    if (businessCategory === 'restaurant' || businessCategory === 'food') {
+      themeId = 'restaurant';
+      confidence = 80;
+      reasons = ['Perfect for restaurant and food businesses'];
+    } else if (businessCategory === 'technology' || businessCategory === 'tech') {
+      themeId = 'clarity';
+      confidence = 85;
+      reasons = ['Optimized for technology companies'];
+    } else if (websiteType === 'blog') {
+      themeId = 'papermod';
+      confidence = 90;
+      reasons = ['Excellent for blog websites'];
+    } else if (websiteType === 'ecommerce') {
+      themeId = 'hargo';
+      confidence = 85;
+      reasons = ['E-commerce ready theme'];
+    } else if (websiteType === 'portfolio') {
+      themeId = 'terminal';
+      confidence = 80;
+      reasons = ['Great for portfolios and creative work'];
+    } else if (websiteType === 'business') {
+      themeId = 'bigspring';
+      confidence = 75;
+      reasons = ['Professional business theme'];
+    }
+    
+    return {
+      recommendedTheme: themeId,
+      confidence,
+      reasons,
+      explanation: `We've selected ${themeId} as a good match for your ${websiteType || 'website'} with ${confidence}% confidence.`,
+      fallback: 'ananke'
+    };
+  };
+
+  // Generate unique project name to avoid 409 conflicts
+  const generateUniqueProjectName = (baseName: string, attempt: number = 0): string => {
+    if (attempt === 0) {
+      return baseName;
+    }
+    return `${baseName} (${attempt})`;
+  };
+
+  // Create project with conflict handling
+  const createProjectWithRetry = async (maxAttempts = 5): Promise<string> => {
+    const baseName = data.businessInfo?.name || 'Generated Website';
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const projectName = generateUniqueProjectName(baseName, attempt);
+        console.log(`🔍 Attempting to create project: "${projectName}" (attempt ${attempt + 1})`);
+        
+        const projectResponse = await projectsAPI.create({
+          name: projectName,
+          description: data.businessInfo?.description || '',
+          wizardData: data,
+          type: data.websiteType?.category || 'business'
+        });
+        
+        const projectId = (projectResponse as any).id || (projectResponse as any).data?.id;
+        console.log('✅ Project created successfully with ID:', projectId);
+        return projectId;
+        
+      } catch (createError: any) {
+        console.error(`❌ Attempt ${attempt + 1} failed:`, createError.message);
+        
+        if (createError?.response?.status === 409) {
+          console.log('⚠️ Project name conflict, trying with different name...');
+          // Continue to next attempt with modified name
+          continue;
+        } else {
+          // Different error, don't retry
+          throw createError;
+        }
+      }
+    }
+    
+    throw new Error(`Failed to create project after ${maxAttempts} attempts. Please try with a different name.`);
+  };
+
+  // Find existing project by wizard data similarity
+  const findExistingProject = async (): Promise<string | null> => {
+    try {
+      console.log('🔍 Looking for existing projects...');
+      const response = await api.get('/projects') as any;
+      
+      if (response?.data?.success && response.data.data) {
+        const projects = response.data.data;
+        const businessName = data.businessInfo?.name?.toLowerCase();
+        const websiteType = data.websiteType?.category?.toLowerCase();
+        
+        // Look for projects with similar names or website types
+        const similarProject = projects.find((project: any) => {
+          const projectName = project.name?.toLowerCase();
+          const projectType = project.type?.toLowerCase();
+          
+          return (businessName && projectName?.includes(businessName)) ||
+                 (websiteType && projectType === websiteType);
+        });
+        
+        if (similarProject) {
+          console.log('✅ Found existing similar project:', similarProject.id);
+          return similarProject.id;
+        }
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.warn('⚠️ Could not search for existing projects:', error.message);
+      return null;
+    }
+  };
+
+  // Wizard data validation function
   const validateWizardData = (wizardData: any): boolean => {
     const requiredFields = [
       'businessInfo.name',
-      'businessInfo.description',
       'websiteType.category',
-      'businessCategory.name',
-      'websitePurpose.goals'
-      // Removed: 'themeConfig.hugoTheme' since theme is auto-detected
+      'businessCategory.name'
     ];
 
     const missing: string[] = [];
@@ -114,7 +229,7 @@ export default function Step10Summary() {
     if (data.websiteType) {
       summary.push({
         title: 'Website Type',
-        content: `${data.websiteType.category} - ${data.websiteType.description}`
+        content: `${data.websiteType.category} - ${data.websiteType.description || 'Professional website'}`
       });
     }
 
@@ -130,27 +245,13 @@ export default function Step10Summary() {
         title: 'Business Information',
         content: `${data.businessInfo.name}${data.businessInfo.tagline ? ` - ${data.businessInfo.tagline}` : ''}`
       });
-    } if (data.websitePurpose?.goals?.length) {
-      summary.push({
-        title: 'Website Purpose',
-        content: data.websitePurpose.goals.join(', ')
-      });
     }
 
-    if (data.businessDescription) {
+    if (data.locationInfo) {
       summary.push({
-        title: 'Business Description',
-        content: data.businessDescription.description.substring(0, 100) + '...'
-      });
-    } if (data.servicesSelection?.selectedServices?.length) {
-      summary.push({
-        title: 'Services',
-        content: data.servicesSelection.selectedServices.map(s => s.name).join(', ')
-      });
-    } if (data.locationInfo) {
-      summary.push({
-        title: 'Location',
-        content: data.locationInfo.isOnlineOnly ? 'Online Business' :
+        title: 'Business Location',
+        content: data.locationInfo.type === 'online' ? 
+          'Online Business' :
           data.locationInfo.address ? data.locationInfo.address : 'Physical Location'
       });
     }
@@ -160,7 +261,9 @@ export default function Step10Summary() {
         title: 'Website Structure',
         content: `${data.websiteStructure.type === 'single-page' ? 'Single Page' : 'Multi-Page'} Website`
       });
-    }    if (data.themeConfig) {
+    }
+
+    if (data.themeConfig) {
       const colorScheme = data.themeConfig.colorScheme?.primary;
       const font = data.themeConfig.typography?.headingFont;
       summary.push({
@@ -184,7 +287,9 @@ export default function Step10Summary() {
     }
 
     return summary;
-  }; const handleGenerateWebsite = async () => {
+  };
+
+  const handleGenerateWebsite = async () => {
     try {
       setIsGenerating(true);
       setError(null);
@@ -198,69 +303,59 @@ export default function Step10Summary() {
         throw new Error('Please complete all wizard steps before proceeding');
       }
 
-      // STEP 2: Verify project status
-      console.log('🔍 Checking project status...');
-      setCurrentStep('Checking project status...');
+      // STEP 2: Try to find existing project first
+      console.log('🔍 Checking for existing projects...');
+      setCurrentStep('Checking for existing projects...');
       setProgress(5);
 
-      // If we have an existing projectId, check its status
       let currentProjectId = projectId;
       let project = null;
+
+      // Try to find existing project first
+      if (!currentProjectId) {
+        currentProjectId = await findExistingProject();
+        if (currentProjectId) {
+          setProjectId(currentProjectId);
+          console.log('✅ Using existing project:', currentProjectId);
+        }
+      }
+
+      // STEP 3: Get or create project
       if (currentProjectId) {
         try {
-          // First check project readiness via health endpoint
-          const readiness = await checkGenerationReadiness(currentProjectId);
-          console.log('📊 Generation readiness:', readiness);
-
-          if (!readiness.ready) {
-            console.log('🚫 Generation not ready:', readiness.reason);
-          }
-
+          console.log('🔍 Fetching existing project:', currentProjectId);
           const projectResponse = await api.get(`/projects/${currentProjectId}`) as any;
           project = projectResponse.data;
-
-          console.log('📊 Project status:', {
-            id: project.id,
-            isCompleted: project.isCompleted,
-            hasWizardData: !!project.wizardData
-          });
+          console.log('✅ Found existing project:', project.id);
         } catch (projectError: any) {
-          console.warn('Could not fetch existing project, will create new one:', projectError.message);
+          console.warn('❌ Could not fetch existing project, will create new one:', projectError.message);
           currentProjectId = null;
         }
       }
 
-      // STEP 3: Project Creation (if needed)
+      // STEP 4: Create project if needed (with conflict handling)
       if (!currentProjectId) {
         setCurrentStep('Creating project...');
         setProgress(10);
 
-        // Before creating the project, add this logging
-        console.log('🔍 Creating project with data:', {
-          name: data.businessInfo?.name || 'Generated Website',
-          description: data.businessInfo?.description || data.businessDescription?.description || '',
-          wizardData: data,
-          type: data.websiteType?.category || 'business'
-        });
-
-        // Create a new project
-        const projectResponse = await projectsAPI.create({
-          name: data.businessInfo?.name || 'Generated Website',
-          description: data.businessInfo?.description || data.businessDescription?.description || '',
-          wizardData: data,
-          type: data.websiteType?.category || 'business'
-        });
-
-        console.log('✅ Project created:', projectResponse);
-
-        currentProjectId = (projectResponse as any).id || (projectResponse as any).data?.id;
-        project = projectResponse;
+        try {
+          currentProjectId = await createProjectWithRetry();
+          setProjectId(currentProjectId);
+          
+          // Fetch the created project
+          const projectResponse = await api.get(`/projects/${currentProjectId}`) as any;
+          project = projectResponse.data;
+          
+        } catch (createError: any) {
+          console.error('❌ Failed to create project:', createError);
+          throw new Error(`Failed to create project: ${createError.message}`);
+        }
       }
 
       setProgress(25);
       setCurrentStep('Project ready');
 
-      // STEP 4: Auto-complete project if needed
+      // STEP 5: Auto-complete project if needed
       if (project && !project.isCompleted) {
         console.log('⚠️ Project not completed, attempting to complete...');
         setCurrentStep('Completing project setup...');
@@ -273,80 +368,69 @@ export default function Step10Summary() {
           console.error('❌ Failed to complete project:', completeError);
           throw new Error('Project could not be completed. Please ensure all wizard steps are filled out.');
         }
-      }      // STEP 5: Start generation
-      console.log('🎯 Starting website generation...');
+      }
+
+      setProgress(35);
       setCurrentStep('Starting website generation...');
-      setProgress(40);
 
-      console.log('Using auto-detection for Hugo theme');
-
-      const generationResponse = await projectsAPI.generateContent(currentProjectId!, {
-        // Removed: hugoTheme - will be auto-detected
-        autoDetectTheme: true,
+      // STEP 6: Start the generation process
+      console.log('🎬 Starting generation for project:', currentProjectId);
+      const generateResponse = await api.post(`/generations/${currentProjectId}/start`, {
+        hugoTheme: themeRecommendation?.recommendedTheme || 'ananke',
         customizations: {
-          colors: data.themeConfig?.colorScheme,
-          fonts: data.themeConfig?.typography
+          colors: data.themeConfig?.colorScheme || {},
+          fonts: data.themeConfig?.typography || {},
+          layout: data.themeConfig?.layout || {}
         },
         contentOptions: {
-          tone: 'professional',
-          includeSEO: true,
-          generateSampleContent: true
+          generateSampleContent: true,
+          contentTone: 'professional',
+          includeImages: true,
+          seoOptimized: true
         }
-      });
+      }) as any;
 
-      console.log('🚀 Generation response:', generationResponse);      const newGenerationId = (generationResponse as any).generationId || (generationResponse as any).data?.generationId;
-      console.log('✅ Generation started with ID:', newGenerationId);
+      console.log('🎯 Generation started:', generateResponse);
 
-      setProgress(50);
-      setCurrentStep('Generation started, processing content...');
+      if (!generateResponse.data.success) {
+        throw new Error(generateResponse.data.error?.message || 'Failed to start generation');
+      }
 
-      // STEP 6: Status Polling
-      pollGenerationStatus(newGenerationId);
+      const generationId = generateResponse.data.data.generationId;
+      console.log('📝 Generation ID:', generationId);
+
+      setProgress(40);
+      setCurrentStep('Generation started, monitoring progress...');
+
+      // STEP 7: Poll for completion
+      await pollGenerationStatus(generationId);
 
     } catch (error: any) {
-      console.error('❌ Generation process failed:', error);
-
-      // Provide specific error messages
-      if (error.response?.status === 400) {
-        const errorCode = error.response.data?.error?.code;
-        const errorMessage = error.response.data?.error?.message;
-
-        switch (errorCode) {
-          case 'PROJECT_NOT_COMPLETED':
-            setError('Project setup is incomplete. Please complete all wizard steps and try again.');
-            break;
-          case 'VALIDATION_ERROR':
-            setError('Invalid generation settings. Please check your configuration and try again.');
-            break;
-          default:
-            setError(`Generation failed: ${errorMessage || 'Unknown error'}`);
-        }
-      } else if (error.response?.status === 409) {
-        setError('A website is already being generated for this project. Please wait for it to complete.');
-      } else if (error.response?.status === 404) {
-        setError('Project not found. Please try creating a new project.');
-      } else {
-        setError(error.message || 'An unexpected error occurred. Please try again.');
-      }
+      console.error('❌ Generation failed:', error);
+      setError(error.message || 'Website generation failed. Please try again.');
+      setCurrentStep('Generation failed');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Status polling function
+  // Enhanced polling with better error handling
   const pollGenerationStatus = async (generationId: string) => {
-    const maxAttempts = 60; // 5 minutes with 5-second intervals
+    const maxAttempts = 120; // 10 minutes at 5-second intervals
     let attempts = 0;
 
     const poll = async () => {
-      try {
-        attempts++; const response = await api.get(`/generations/${generationId}/status`) as any;
-        const status = response.data;
+      attempts++;
+      console.log(`📊 Polling attempt ${attempts}/${maxAttempts} for generation:`, generationId);
 
-        console.log(`📊 Generation status (${attempts}/${maxAttempts}):`, status);
+      try {
+        const statusResponse = await api.get(`/generations/${generationId}/status`) as any;
+        const status = statusResponse.data.data;
+
+        console.log('📈 Generation status:', status);
 
         if (status.status === 'COMPLETED') {
-          console.log('🎉 Generation completed successfully!');
+          console.log('🎉 Generation completed successfully');
           setGenerationResult({
             previewUrl: status.previewUrl,
             downloadUrl: status.downloadUrl,
@@ -388,40 +472,24 @@ export default function Step10Summary() {
     };
 
     poll();
-  };  // Health check function
-  const checkGenerationReadiness = async (projectId: string) => {
-    try {
-      console.log('🔍 Checking generation readiness for project:', projectId);
-      console.log('🔗 API URL:', `/health/generation-readiness/${projectId}`);
-      
-      const response = await api.get(`/health/generation-readiness/${projectId}`) as any;
-      console.log('✅ Health check response:', response);
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ Health check failed:', error);
-      console.error('Error details:', {
-        message: error?.message,
-        status: error?.response?.status,
-        statusText: error?.response?.statusText,
-        data: error?.response?.data
-      });
-      return { ready: false, reason: 'Health check failed: ' + (error?.message || 'Unknown error') };
-    }
   };
 
-  // Wrapper for button click
   const handleGenerateClick = () => {
     handleGenerateWebsite();
-  }; const handleStartOver = () => {
-    // Reset the wizard data and go back to step 1
+  };
+
+  const handleStartOver = () => {
     clearData();
+    setProjectId(null); // Clear cached project ID
+    setThemeRecommendation(null); // Clear theme recommendation
   };
 
   const summary = getWizardSummary();
 
   return (
     <div className="space-y-8">
-      {/* Header */}      <div className="text-center">
+      {/* Header */}
+      <div className="text-center">
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
           {isGenerationComplete ? 'Website Generated Successfully!' : 'Review & Generate Your Website'}
         </h2>
@@ -459,10 +527,20 @@ export default function Step10Summary() {
                   </div>
                 ))}
               </div>
-            </div>          </div>
+            </div>
+          </div>
 
           {/* Theme Recommendation Preview */}
-          {themeRecommendation && (
+          {isLoadingTheme ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+                <h3 className="font-semibold text-gray-700">
+                  Analyzing your requirements to recommend the perfect theme...
+                </h3>
+              </div>
+            </div>
+          ) : themeRecommendation ? (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
               <div className="flex items-center space-x-3 mb-3">
                 <span className="text-2xl">🎨</span>
@@ -480,71 +558,16 @@ export default function Step10Summary() {
               
               <details className="text-sm">
                 <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
-                  Why this theme? (Click to expand)
+                  Why this theme?
                 </summary>
-                <ul className="mt-2 space-y-1 text-blue-600">
-                  {themeRecommendation.reasons.map((reason: string, index: number) => (
-                    <li key={index} className="flex items-start space-x-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span>{reason}</span>
-                    </li>
+                <ul className="mt-2 ml-4 space-y-1 text-blue-600">
+                  {themeRecommendation.reasons?.map((reason: string, index: number) => (
+                    <li key={index}>• {reason}</li>
                   ))}
                 </ul>
               </details>
             </div>
-          )}
-
-          {/* Website Preview */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-                  <EyeIcon className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-                  Website Preview
-                </h3>
-                <button
-                  onClick={() => setShowPreview(!showPreview)}
-                  className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-                >
-                  {showPreview ? 'Hide Preview' : 'Show Preview'}
-                </button>
-              </div>
-            </div>
-
-            {showPreview && (
-              <div className="p-6">
-                <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center">
-                  <div
-                    className="max-w-2xl mx-auto p-6 rounded-lg border"
-                    style={{
-                      backgroundColor: data.themeConfig?.colorScheme?.background || '#ffffff',
-                      color: data.themeConfig?.colorScheme?.text || '#1f2937',
-                      borderColor: data.themeConfig?.colorScheme?.primary || '#e5e7eb'
-                    }}
-                  >
-                    <h1
-                      className="text-2xl font-bold mb-4"
-                      style={{
-                        color: data.themeConfig?.colorScheme?.primary || '#1f2937',
-                        fontFamily: data.themeConfig?.typography?.headingFont || 'system-ui'
-                      }}
-                    >
-                      {data.businessInfo?.name || 'Your Website'}
-                    </h1>
-                    <p className="mb-4">
-                      {data.businessInfo?.tagline || data.businessDescription?.description?.substring(0, 150) || 'Welcome to our website'}
-                    </p>
-                    <button
-                      className="px-6 py-2 rounded-lg text-white font-medium"
-                      style={{ backgroundColor: data.themeConfig?.colorScheme?.primary || '#3b82f6' }}
-                    >
-                      Get Started
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          ) : null}
 
           {/* Generation Progress */}
           {isGenerating && (
@@ -595,23 +618,24 @@ export default function Step10Summary() {
                   We'll create a complete Hugo website with your chosen theme, content, and configuration.
                   The generated site will include all necessary files and can be deployed immediately.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-3">                  <button
-                  onClick={handleGenerateClick}
-                  disabled={isGenerating}
-                  className="flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
-                >
-                  {isGenerating ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                      Generating Website...
-                    </>
-                  ) : (
-                    <>
-                      <PlayIcon className="w-4 h-4 mr-2" />
-                      Generate Website
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={handleGenerateClick}
+                    disabled={isGenerating}
+                    className="flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                        Generating Website...
+                      </>
+                    ) : (
+                      <>
+                        <PlayIcon className="w-4 h-4 mr-2" />
+                        Generate Website
+                      </>
+                    )}
+                  </button>
                   <button
                     onClick={handleStartOver}
                     className="px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
@@ -623,7 +647,9 @@ export default function Step10Summary() {
             </div>
           </div>
         </>
-      )}      {/* Generation Complete */}
+      )}
+
+      {/* Generation Complete */}
       {isGenerationComplete && (
         <div className="space-y-6">
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
@@ -642,67 +668,42 @@ export default function Step10Summary() {
             </div>
           </div>
 
-          {/* Download and Action Buttons */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <div className="text-center">
-                <ArrowDownTrayIcon className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Download Files
+          {/* Download and Preview Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <ArrowDownTrayIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Download Your Website
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Download your complete Hugo website source code and assets.
-                </p>                <button
-                  onClick={() => {
-                    if (generationResult?.downloadUrl) {
-                      window.open(generationResult.downloadUrl, '_blank');
-                    } else {
-                      toast.error('Download URL not available');
-                    }
-                  }}
-                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-                >
-                  Download ZIP
-                </button>
               </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                Download the complete Hugo website as a ZIP file. Contains all source files, content, and assets.
+              </p>
+              <button
+                onClick={() => generationResult?.downloadUrl && window.open(generationResult.downloadUrl, '_blank')}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Download ZIP File
+              </button>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <div className="text-center">
-                <EyeIcon className="w-12 h-12 text-green-600 dark:text-green-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Preview Site
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <EyeIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Preview Your Website
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  View your website in a new tab to see how it looks.
-                </p>                <button
-                  onClick={() => {
-                    if (generationResult?.previewUrl) {
-                      window.open(generationResult.previewUrl, '_blank');
-                    } else {
-                      toast.error('Preview URL not available');
-                    }
-                  }}
-                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
-                >
-                  Open Preview
-                </button>
               </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <div className="text-center">
-                <ShareIcon className="w-12 h-12 text-purple-600 dark:text-purple-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Deploy Site
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Deploy your website to Netlify, Vercel, or GitHub Pages.
-                </p>
-                <button className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors">
-                  Deploy Now
-                </button>
-              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                View a live preview of your generated website before downloading or deploying.
+              </p>
+              <button
+                onClick={() => generationResult?.previewUrl && window.open(generationResult.previewUrl, '_blank')}
+                className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Preview Site
+              </button>
             </div>
           </div>
 
