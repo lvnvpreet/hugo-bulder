@@ -28,10 +28,12 @@ export const authenticateToken = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    console.log('🔐 Auth middleware called for:', req.method, req.url);
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
     if (!token) {
+      console.log('❌ No auth token provided');
       res.status(401).json({ 
         success: false, 
         error: {
@@ -40,13 +42,12 @@ export const authenticateToken = async (
         }
       });
       return;
-    }
-
-    // Validate token using auth service
+    }    // Validate token using auth service
+    console.log('🔍 Validating token...');
     const user = await authService.validateToken(token);
     
     if (user) {
-      console.log('Auth: validated user', user.id);
+      console.log('✅ Auth: validated user', user.id);
       // Add user to request object
       req.user = {
         id: user.id,
@@ -60,6 +61,7 @@ export const authenticateToken = async (
     }
     
     // Token validation failed
+    console.log('❌ Token validation failed');
     res.status(403).json({ 
       success: false, 
       error: {

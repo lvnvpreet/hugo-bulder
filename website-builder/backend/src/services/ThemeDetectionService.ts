@@ -3,6 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 
+// Get the current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Import shared types - we'll define them locally for type safety
 export interface ThemeConfig {
   id: string;
@@ -37,59 +41,53 @@ export interface ColorScheme {
   text: string;
 }
 
-// Calculate path using import.meta.url (ES modules approach)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const sharedThemesPath = path.resolve(__dirname, '../../../shared/constants/themes.js');
+// Define theme constants locally to avoid import issues
 let VERIFIED_THEMES: ThemeConfig[] = [];
 let INDUSTRY_COLORS: { [key: string]: ColorScheme } = {};
 
-// Load shared themes function (async)
-async function loadSharedThemes() {
-  try {    if (fs.existsSync(sharedThemesPath)) {
-      const shared = await import(sharedThemesPath);
-      if (shared.VERIFIED_THEMES && Array.isArray(shared.VERIFIED_THEMES)) {
-        VERIFIED_THEMES = shared.VERIFIED_THEMES;
-      }
-      if (shared.INDUSTRY_COLORS && typeof shared.INDUSTRY_COLORS === 'object') {
-        INDUSTRY_COLORS = shared.INDUSTRY_COLORS;
-      }
+// Initialize fallback themes immediately
+if (!VERIFIED_THEMES || VERIFIED_THEMES.length === 0) {
+  VERIFIED_THEMES = [
+    {
+      id: 'papermod',
+      name: 'PaperMod',
+      categories: ['blog', 'content', 'minimal', 'technology'],
+      websiteTypes: ['blog', 'personal', 'business'],
+      features: ['blog-focus', 'seo-optimized', 'fast-loading', 'dark-mode'],
+      colorScheme: { primary: '#1e40af', secondary: '#3b82f6', accent: '#60a5fa' },
+      suitability: { business: 70, portfolio: 80, blog: 95, ecommerce: 40, restaurant: 50, medical: 60, creative: 70, technology: 90 },
+      githubUrl: 'https://github.com/adityatelange/hugo-PaperMod',
+      installCommand: 'git submodule add --depth=1 https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod'
+    },
+    {
+      id: 'ananke',
+      name: 'Ananke',
+      categories: ['business', 'multipurpose', 'professional'],
+      websiteTypes: ['business', 'portfolio', 'blog'],
+      features: ['responsive', 'customizable', 'multipurpose', 'professional'],
+      colorScheme: { primary: '#2563eb', secondary: '#3b82f6', accent: '#60a5fa' },
+      suitability: { business: 85, portfolio: 75, blog: 70, ecommerce: 60, restaurant: 70, medical: 75, creative: 65, technology: 75 },
+      githubUrl: 'https://github.com/theNewDynamic/gohugo-theme-ananke',
+      installCommand: 'hugo mod get github.com/theNewDynamic/gohugo-theme-ananke/v2'
     }
-  } catch (error) {
+  ];
+}
+
+// Initialize themes directly (will load from shared constants via require)
+function loadSharedThemes() {
+  try {
+    // Use require to load from shared constants
+    const sharedPath = path.resolve(__dirname, '../../../shared/constants/themes.ts');
+    if (fs.existsSync(sharedPath)) {
+      // For now, use fallback themes until we fix the import issue
+      console.log('⚠️ Using fallback themes (import issue with shared constants)');
+    }  } catch (error) {
     console.error('Error loading shared theme constants:', error);
   }
 }
-// This is a placeholder for correct deletion - removed problematic code
-  if (!VERIFIED_THEMES || VERIFIED_THEMES.length === 0) {
-    VERIFIED_THEMES = [
-      {
-        id: 'papermod',
-        name: 'PaperMod',
-        categories: ['blog', 'content', 'minimal', 'technology'],
-        websiteTypes: ['blog', 'personal', 'business'],
-        features: ['blog-focus', 'seo-optimized', 'fast-loading', 'dark-mode'],
-        colorScheme: { primary: '#1e40af', secondary: '#3b82f6', accent: '#60a5fa' },
-        suitability: { business: 70, portfolio: 80, blog: 95, ecommerce: 40, restaurant: 50, medical: 60, creative: 70, technology: 90 },
-        githubUrl: 'https://github.com/adityatelange/hugo-PaperMod',
-        installCommand: 'git submodule add --depth=1 https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod'
-      },
-      {
-        id: 'ananke',
-        name: 'Ananke',
-        categories: ['business', 'multipurpose', 'professional'],
-        websiteTypes: ['business', 'portfolio', 'blog'],
-        features: ['responsive', 'customizable', 'multipurpose', 'professional'],
-        colorScheme: { primary: '#2563eb', secondary: '#3b82f6', accent: '#60a5fa' },
-        suitability: { business: 85, portfolio: 75, blog: 70, ecommerce: 60, restaurant: 70, medical: 75, creative: 65, technology: 75 },
-        githubUrl: 'https://github.com/theNewDynamic/gohugo-theme-ananke',
-        installCommand: 'hugo mod get github.com/theNewDynamic/gohugo-theme-ananke/v2'
-      }
-    ];
-  }
-  
-  // Fallback color schemes
-  if (!INDUSTRY_COLORS || Object.keys(INDUSTRY_COLORS).length === 0) {
+
+// Fallback color schemes initialization
+if (!INDUSTRY_COLORS || Object.keys(INDUSTRY_COLORS).length === 0) {
     INDUSTRY_COLORS = {
       technology: {
         primary: '#1e40af',

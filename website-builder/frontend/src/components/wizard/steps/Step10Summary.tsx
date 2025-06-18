@@ -11,35 +11,69 @@ export default function Step10Summary() {
   const [themeRecommendation, setThemeRecommendation] = useState<any>(null);
   // New state variables for real API integration
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number>(0);
-  const [currentStep, setCurrentStep] = useState<string>('');
+  const [progress, setProgress] = useState<number>(0);  const [currentStep, setCurrentStep] = useState<string>('');
   const [generationResult, setGenerationResult] = useState<any>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
-
+  const [isCreatingProject, setIsCreatingProject] = useState<boolean>(false);
   // Load theme recommendation on component mount
   useEffect(() => {
-    loadThemeRecommendation();
-  }, []);
-
+    // Only load if we haven't started creating a project yet
+    if (!isCreatingProject && !projectId) {
+      loadThemeRecommendation();
+    }
+  }, []); // Empty dependency array to run only once
   const loadThemeRecommendation = async () => {
     try {
       // Create project first to get projectId if we don't have one
       let currentProjectId = projectId;
       
-      if (!currentProjectId) {
-        const projectResponse = await projectsAPI.create({
-          name: data.businessInfo?.name || 'Generated Website',
-          description: data.businessInfo?.description || '',
-          wizardData: data,
-          type: data.websiteType?.category || 'business'
-        });
+      if (!currentProjectId && !isCreatingProject) {
+        setIsCreatingProject(true);
         
-        currentProjectId = (projectResponse as any).id || (projectResponse as any).data?.id;
-        setProjectId(currentProjectId);
-      }      // Get theme recommendation
+        try {
+          const projectResponse = await projectsAPI.create({
+            name: data.businessInfo?.name || 'Generated Website',
+            description: data.businessInfo?.description || '',
+            wizardData: data,
+            type: data.websiteType?.category || 'business'
+          });
+          
+          currentProjectId = (projectResponse as any).id || (projectResponse as any).data?.id;
+          setProjectId(currentProjectId);
+          console.log('✅ Project created with ID:', currentProjectId);
+        } catch (createError: any) {
+          console.error('❌ Failed to create project:', createError);
+          
+          // If it's a 409 conflict, the project might already exist
+          if (createError?.response?.status === 409) {
+            console.log('⚠️ Project already exists (409 conflict), continuing...');
+            // Try to get the existing project
+            // For now, we'll skip theme recommendation
+            return;
+          } else {
+            throw createError;
+          }
+        } finally {
+          setIsCreatingProject(false);
+        }
+      }// Get theme recommendation
+      console.log('🔍 Requesting theme recommendation for project:', currentProjectId);
       const response = await api.get(`/generations/detect-theme/${currentProjectId}`) as any;
-      const result = response.data;
-      setThemeRecommendation(result.data);
+      console.log('📥 Theme recommendation response:', response);
+      
+      if (response && response.data) {
+        const result = response.data;
+        console.log('📋 Theme recommendation result:', result);
+        
+        if (result.success && result.data) {
+          setThemeRecommendation(result.data);
+          console.log('✅ Theme recommendation set:', result.data);
+        } else {
+          console.warn('⚠️ Theme recommendation API returned success:false or no data:', result);
+        }
+      } else {
+        console.warn('⚠️ Theme recommendation response has no data:', response);
+      }
     } catch (error) {
       console.error('Failed to load theme recommendation:', error);
       // Don't show error to user as this is optional
@@ -354,15 +388,24 @@ export default function Step10Summary() {
     };
 
     poll();
-  };
-  // Health check function
+  };  // Health check function
   const checkGenerationReadiness = async (projectId: string) => {
     try {
+      console.log('🔍 Checking generation readiness for project:', projectId);
+      console.log('🔗 API URL:', `/health/generation-readiness/${projectId}`);
+      
       const response = await api.get(`/health/generation-readiness/${projectId}`) as any;
+      console.log('✅ Health check response:', response);
       return response.data;
-    } catch (error) {
-      console.error('Health check failed:', error);
-      return { ready: false, reason: 'Health check failed' };
+    } catch (error: any) {
+      console.error('❌ Health check failed:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data
+      });
+      return { ready: false, reason: 'Health check failed: ' + (error?.message || 'Unknown error') };
     }
   };
 

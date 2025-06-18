@@ -34,11 +34,9 @@ function isWizardDataComplete(wizardData) {
     wizardData.websiteStructure.type && 
     Array.isArray(wizardData.websiteStructure.selectedPages) &&
     wizardData.websiteStructure.selectedPages.length > 0;
-
   const hasThemeConfig = wizardData.themeConfig && 
-    typeof wizardData.themeConfig === 'object' &&
-    typeof wizardData.themeConfig.hugoTheme === 'string' &&
-    wizardData.themeConfig.hugoTheme.length > 0;
+    typeof wizardData.themeConfig === 'object';
+    // Removed: hugoTheme check since theme is auto-detected
 
   // Check if we have the minimum required data for generation
   const hasMinimumData = hasWebsiteStructure && hasThemeConfig;

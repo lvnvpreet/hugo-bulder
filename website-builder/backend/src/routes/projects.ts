@@ -291,12 +291,9 @@ router.post(
         error: { code: 'PROJECT_NOT_FOUND', message: 'Project not found' }
       });
       return;
-    }
-
-    // Mark project as completed
+    }    // Mark project as completed
     const updatedProject = await projectService.updateProject(projectId, userId, {
-      isCompleted: true,
-      updatedAt: new Date()
+      isCompleted: true
     });
 
     console.log(`✅ Project ${projectId} marked as completed`);

@@ -251,11 +251,13 @@ export class GenerationValidationError extends Error {
 }
 
 export function validateGenerationOptions(options: any): void {
-  if (!options.hugoTheme) {
-    throw new GenerationValidationError('THEME_NOT_SUPPORTED', 'Hugo theme is required');
+  // Only require hugoTheme if auto-detection is not enabled
+  if (!options.hugoTheme && !options.autoDetectTheme) {
+    throw new GenerationValidationError('THEME_NOT_SUPPORTED', 'Hugo theme is required when auto-detection is disabled');
   }
 
-  if (!SUPPORTED_HUGO_THEMES.includes(options.hugoTheme)) {
+  // Validate theme if provided
+  if (options.hugoTheme && !SUPPORTED_HUGO_THEMES.includes(options.hugoTheme)) {
     throw new GenerationValidationError(
       'THEME_NOT_SUPPORTED',
       `Theme '${options.hugoTheme}' is not supported`
@@ -309,6 +311,17 @@ export function getGenerationStatusFromSteps(steps: GenerationStep[]): SiteGener
   
   if (steps.some(step => step.status === 'running')) {
     const runningStep = steps.find(step => step.status === 'running');
+      if (runningStep?.id === 'initializing') {
+      return 'INITIALIZING' as any;
+    }
+    
+    if (runningStep?.id === 'building_structure') {
+      return 'BUILDING_STRUCTURE' as any;
+    }
+    
+    if (runningStep?.id === 'applying_theme') {
+      return 'APPLYING_THEME' as any;
+    }
     
     if (runningStep?.id === 'generating_content') {
       return SiteGenerationStatus.GENERATING_CONTENT;

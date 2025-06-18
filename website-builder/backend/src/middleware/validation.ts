@@ -5,6 +5,9 @@ import { createValidationError } from './errorHandler.js';
 // Validation middleware factory
 export const validate = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
+    console.log('🔍 VALIDATION DEBUG:');
+    console.log('  - Original body:', JSON.stringify(req.body, null, 2));
+    
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
       stripUnknown: true,
@@ -12,11 +15,17 @@ export const validate = (schema: Joi.ObjectSchema) => {
     });
 
     if (error) {
+      console.log('❌ VALIDATION FAILED:');
+      console.log('  - Error details:', error.details);
+      console.log('  - Schema:', schema.describe());
+      
       const details = error.details.map((detail) => ({
         field: detail.path.join('.'),
         message: detail.message,
         value: detail.context?.value,
       }));
+
+      console.log('  - Formatted details:', details);
 
       res.status(400).json({
         success: false,
@@ -28,6 +37,9 @@ export const validate = (schema: Joi.ObjectSchema) => {
       });
       return;
     }
+
+    console.log('✅ VALIDATION PASSED:');
+    console.log('  - Validated value:', JSON.stringify(value, null, 2));
 
     // Replace req.body with validated and sanitized data
     req.body = value;
@@ -71,6 +83,9 @@ export const validateQuery = (schema: Joi.ObjectSchema) => {
 // Route parameter validation
 export const validateParams = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
+    console.log('🔍 PARAMS VALIDATION DEBUG:');
+    console.log('  - Original params:', JSON.stringify(req.params, null, 2));
+    
     const { error, value } = schema.validate(req.params, {
       abortEarly: false,
       stripUnknown: true,
@@ -78,11 +93,16 @@ export const validateParams = (schema: Joi.ObjectSchema) => {
     });
 
     if (error) {
+      console.log('❌ PARAMS VALIDATION FAILED:');
+      console.log('  - Error details:', error.details);
+      
       const details = error.details.map((detail) => ({
         field: detail.path.join('.'),
         message: detail.message,
         value: detail.context?.value,
       }));
+
+      console.log('  - Formatted details:', details);
 
       res.status(400).json({
         success: false,
@@ -94,6 +114,9 @@ export const validateParams = (schema: Joi.ObjectSchema) => {
       });
       return;
     }
+
+    console.log('✅ PARAMS VALIDATION PASSED:');
+    console.log('  - Validated params:', JSON.stringify(value, null, 2));
 
     // Replace req.params with validated data
     req.params = value;

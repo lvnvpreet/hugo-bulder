@@ -127,15 +127,27 @@ const projectSchemas = {
       .min(0)
       .optional()
       .default(0)
-  }),
-
-  // Project ID parameter validation
+  }),  // Project ID parameter validation
   projectId: Joi.object({
     id: Joi.string()
-      .uuid()
+      .min(20)
+      .max(30)
       .required()
       .messages({
-        'string.guid': 'Invalid project ID format',
+        'string.min': 'Invalid project ID format',
+        'string.max': 'Invalid project ID format',
+        'any.required': 'Project ID is required'
+      })
+  }),
+  // Project ID parameter validation for :projectId routes
+  projectIdParam: Joi.object({
+    projectId: Joi.string()
+      .min(20)
+      .max(30)
+      .required()
+      .messages({
+        'string.min': 'Invalid project ID format',
+        'string.max': 'Invalid project ID format',
         'any.required': 'Project ID is required'
       })
   }),
@@ -414,6 +426,19 @@ const projectSchemas = {
     reviewed: Joi.boolean().required(),
     notes: Joi.string().trim().max(500).optional(),
     readyForGeneration: Joi.boolean().optional()
+  }),
+
+  // Health route project ID parameter validation
+  healthProjectId: Joi.object({
+    projectId: Joi.string()
+      .min(20)
+      .max(30)
+      .required()
+      .messages({
+        'string.min': 'Invalid project ID format',
+        'string.max': 'Invalid project ID format',
+        'any.required': 'Project ID is required'
+      })
   })
 };
 

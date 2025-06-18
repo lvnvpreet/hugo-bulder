@@ -129,6 +129,37 @@ app.use(express.urlencoded({
   parameterLimit: 50
 }));
 
+// Global request logging for debugging
+app.use((req, res, next) => {
+  // Log ALL requests to see what's happening
+  console.log(`🌐 ${req.method} ${req.url} - IP: ${req.ip}`);
+  
+  if (req.url.includes('/generations/') && req.method === 'POST') {
+    console.log('🚨 GENERATION REQUEST DETECTED:');
+    console.log('  - Method:', req.method);
+    console.log('  - URL:', req.url);
+    console.log('  - Path:', req.path);
+    console.log('  - Params:', req.params);
+    console.log('  - Query:', req.query);
+    console.log('  - Body:', JSON.stringify(req.body, null, 2));
+    console.log('  - Content-Type:', req.headers['content-type']);
+    console.log('  - Authorization:', req.headers.authorization ? 'Present' : 'Missing');
+    console.log('  - User-Agent:', req.headers['user-agent']);
+  }
+  
+  // Add response interceptor to log responses
+  const originalSend = res.send;
+  res.send = function(data) {
+    if (req.url.includes('/generations/') && req.method === 'POST') {
+      console.log(`📤 Response Status: ${res.statusCode}`);
+      console.log(`📤 Response Data: ${data}`);
+    }
+    return originalSend.call(this, data);
+  };
+  
+  next();
+});
+
 // Rate limiting middleware
 const globalRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

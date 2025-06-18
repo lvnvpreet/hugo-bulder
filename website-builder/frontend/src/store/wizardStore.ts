@@ -115,11 +115,9 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
           (!data.websiteStructure.selectedPages || data.websiteStructure.selectedPages.length < 3)) {
         errors.push('Please select at least the required pages');      }
       break;
-    
-    case 9:
-      if (!data.themeConfig?.hugoTheme) {
-        errors.push('Please select a theme');
-      }
+      case 9:
+      // UPDATED: Remove theme selection validation since we use auto-detection
+      // Only validate that colors are configured
       if (!data.themeConfig?.colorScheme?.primary) {
         errors.push('Please select a primary color');
       }

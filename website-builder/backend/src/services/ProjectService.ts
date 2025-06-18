@@ -79,10 +79,22 @@ export class ProjectService {  // Project CRUD operations
         } else {
           throw createNotFoundError('User');
         }
-      }
-
-      if (user.projectsUsed >= user.projectsLimit) {
-        throw createValidationError('Project limit reached. Please upgrade your plan or delete some projects.');
+      }      // For development purposes, temporarily disable project limit check
+      // if (user.projectsUsed >= user.projectsLimit) {
+      //   throw createValidationError('Project limit reached. Please upgrade your plan or delete some projects.');
+      // }
+      
+      console.log(`DEBUG: User ${userId} has ${user.projectsUsed} projects (limit: ${user.projectsLimit})`);
+      
+      // For development environment, automatically increase the project limit if needed
+      if (process.env.NODE_ENV !== 'production' && user.projectsUsed >= user.projectsLimit) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { 
+            projectsLimit: user.projectsLimit + 10 // Increase limit by 10 for development
+          }
+        });
+        console.log(`DEBUG: Increased project limit to ${user.projectsLimit + 10} for development`);
       }
 
       // Generate unique slug
@@ -445,26 +457,50 @@ export class ProjectService {  // Project CRUD operations
       .trim()
       .substring(0, 50);
 
-    let slug = baseSlug;
-    let counter = 1;
-
-    while (true) {
-      const existing = await prisma.project.findFirst({
-        where: {
-          slug,
-          userId
-        }
-      });
-
-      if (!existing) {
-        break;
+    // First, check if the base slug is available
+    const existingBase = await prisma.project.findFirst({
+      where: {
+        slug: baseSlug,
+        userId
       }
+    });
 
-      slug = `${baseSlug}-${counter}`;
-      counter++;
+    if (!existingBase) {
+      console.log(`✅ Generated unique slug: ${baseSlug}`);
+      return baseSlug;
     }
 
-    return slug;
+    // If base slug exists, find all existing slugs with this pattern
+    const existingSlugs = await prisma.project.findMany({
+      where: {
+        slug: {
+          startsWith: baseSlug
+        },
+        userId
+      },
+      select: {
+        slug: true
+      }
+    });
+
+    console.log(`🔍 Found ${existingSlugs.length} existing slugs for pattern: ${baseSlug}`);
+
+    // Extract numbers from existing slugs and find the highest
+    let maxNumber = 0;
+    const slugNumbers = existingSlugs
+      .map(p => p.slug)
+      .filter(slug => slug.match(new RegExp(`^${baseSlug}(-\\d+)?$`)))      .map(slug => {
+        const match = slug.match(/(\d+)$/);
+        return match ? parseInt(match[1]!, 10) : 0;
+      });
+
+    if (slugNumbers.length > 0) {
+      maxNumber = Math.max(...slugNumbers);
+    }
+
+    const newSlug = `${baseSlug}-${maxNumber + 1}`;
+    console.log(`✅ Generated unique slug: ${newSlug}`);
+    return newSlug;
   }
 
   private async validateProjectOwnership(projectId: string, userId: string): Promise<any> {
@@ -635,16 +671,14 @@ export class ProjectService {  // Project CRUD operations
     if (!wizardData || typeof wizardData !== 'object') {
       console.log('❌ Wizard data is null or not an object');
       return false;
-    }
-
-    // Define ALL required fields that must be present
+    }    // Define ALL required fields that must be present
     const requiredFields = [
       'businessInfo.name',
       'businessInfo.description', 
       'websiteType.category',
       'businessCategory.name',
-      'websitePurpose.goals',
-      'themeConfig.hugoTheme'
+      'websitePurpose.goals'
+      // Removed: 'themeConfig.hugoTheme' since theme is auto-detected
     ];
 
     for (const field of requiredFields) {

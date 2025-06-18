@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { validate, validateQuery, validateParams } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { websiteGenerationService } from '../services/WebsiteGenerationService';
@@ -127,6 +127,19 @@ const projectService = new ProjectService();
  */
 router.post(
   '/:projectId/start',
+  // Add detailed logging before validation
+  (req: Request, res: Response, next: NextFunction) => {
+    console.log('🔍 RAW REQUEST DATA:');
+    console.log('  - Method:', req.method);
+    console.log('  - URL:', req.url);
+    console.log('  - Params:', req.params);
+    console.log('  - Body:', JSON.stringify(req.body, null, 2));
+    console.log('  - Headers:', {
+      'content-type': req.headers['content-type'],
+      'authorization': req.headers.authorization ? '***PROVIDED***' : 'MISSING'
+    });
+    next();
+  },
   validateParams(generationSchemas.projectId),
   validate(generationSchemas.startGeneration),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -170,12 +183,12 @@ router.post(
               suggestion: 'Complete all wizard steps or call /projects/:id/complete endpoint'
             }
           }
-        });
-      }      // Proceed with generation...
+        });      }      // Proceed with generation...
       const generationId = await websiteGenerationService.startGeneration({
         projectId: projectId!,
         userId,
         hugoTheme: req.body.hugoTheme,
+        autoDetectTheme: req.body.autoDetectTheme,
         customizations: req.body.customizations,
         contentOptions: req.body.contentOptions,
       });
@@ -695,13 +708,22 @@ router.get(
         success: false,
         error: { message: 'Project wizard data not found', code: 'WIZARD_INCOMPLETE' }
       });
-    }
-
-    // Detect theme
+    }    // Detect theme
+    console.log('🎨 Starting theme detection for project:', projectId);
+    console.log('📋 Wizard data keys:', Object.keys(project.wizardData || {}));
+    
     const themeDetector = new ThemeDetectionService();
-    const recommendation = themeDetector.detectTheme(project.wizardData);
+    await themeDetector.initialize(); // Make sure themes are loaded
+    
+    const recommendation = await themeDetector.detectTheme(project.wizardData);
     const colorScheme = themeDetector.detectColorScheme(project.wizardData, recommendation.themeId);
     const explanation = themeDetector.getThemeExplanation(recommendation);
+
+    console.log('✅ Theme detection completed:', {
+      recommendedTheme: recommendation.themeId,
+      confidence: recommendation.confidence,
+      reasons: recommendation.reasons?.length || 0
+    });
 
     return res.json({
       success: true,
