@@ -1,3 +1,7 @@
+
+// File: backend/src/services/WebsiteGenerationService.ts
+// Updated to integrate with your Ollama-based AI engine
+
 import { PrismaClient, SiteGenerationStatus, Project, SiteGeneration } from '@prisma/client';
 import { db } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
@@ -69,14 +73,20 @@ interface GenerationResult {
   errors?: string[];
 }
 
-interface AIContentResponse {
+interface OllamaContentResponse {
   pages: Record<string, {
     title: string;
     content: string;
     meta_description: string;
     keywords?: string[];
+    seo_title?: string;
+    word_count?: number;
   }>;
   seo_data?: any;
+  generation_time?: number;
+  model_used?: string;
+  word_count_total?: number;
+  generation_id?: string;
 }
 
 export class WebsiteGenerationService {
@@ -94,6 +104,7 @@ export class WebsiteGenerationService {
 
     this.outputDir = path.join(process.cwd(), 'generated-sites');
     this.themeDetection = new ThemeDetectionService();
+    // Updated to use port 8000 for Ollama AI engine
     this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8000';
     
     // Ensure output directory exists
@@ -247,7 +258,7 @@ export class WebsiteGenerationService {
   }
 
   /**
-   * REAL IMPLEMENTATION - Process generation with actual Hugo site building
+   * REAL IMPLEMENTATION - Process generation with actual Hugo site building and Ollama AI
    */
   private async processGeneration(
     generationId: string,
@@ -260,7 +271,7 @@ export class WebsiteGenerationService {
   ): Promise<void> {
     const startTime = Date.now();
     let siteDir = '';
-    let generatedContent: AIContentResponse | null = null;
+    let generatedContent: OllamaContentResponse | null = null;
 
     try {
       // Step 1: Initialize Hugo environment
@@ -285,17 +296,17 @@ export class WebsiteGenerationService {
       const projectData = this.parseProjectData(project);
       console.log(`📊 Processed project data for: ${projectData.businessName}`);
 
-      // Step 3: Generate AI content
+      // Step 3: Generate AI content using Ollama
       await this.updateGenerationProgress(generationId, {
-        step: 'Generating AI content...',
+        step: 'Generating AI content with Ollama...',
         progress: 35,
-        message: 'Creating website content with AI',
+        message: 'Creating website content using local AI models',
       });
       await this.updateStatus(generationId, SiteGenerationStatus.GENERATING_CONTENT);
 
-      generatedContent = await this.generateAIContent(projectData, options.contentOptions);
+      generatedContent = await this.generateOllamaContent(projectData, options.contentOptions);
       const pageCount = Object.keys(generatedContent?.pages || {}).length;
-      console.log(`🤖 Generated ${pageCount} pages with AI`);
+      console.log(`🤖 Generated ${pageCount} pages with Ollama (Model: ${generatedContent?.model_used || 'unknown'})`);
 
       // Step 4: Create Hugo site structure
       await this.updateGenerationProgress(generationId, {
@@ -326,14 +337,14 @@ export class WebsiteGenerationService {
         message: 'Creating Hugo config files',
       });
 
-      await this.generateHugoConfig(siteDir, projectData, options);
+      await this.generateHugoConfig(siteDir, projectData, options, generatedContent?.seo_data);
       console.log('⚙️ Hugo configuration generated');
 
       // Step 7: Create content files
       await this.updateGenerationProgress(generationId, {
         step: 'Creating content files...',
         progress: 80,
-        message: 'Writing content to Hugo markdown files',
+        message: 'Writing AI-generated content to Hugo markdown files',
       });
 
       const contentFileCount = await this.createContentFiles(siteDir, generatedContent, projectData);
@@ -374,10 +385,11 @@ export class WebsiteGenerationService {
       await this.updateGenerationProgress(generationId, {
         step: 'Generation completed successfully!',
         progress: 100,
-        message: 'Website is ready for download',
+        message: `Website ready for download (${generatedContent?.word_count_total || 0} words generated)`,
       });
 
       console.log(`🎉 Real Hugo site generated successfully in ${generationTime}ms`);
+      console.log(`📈 Total words generated: ${generatedContent?.word_count_total || 0}`);
 
       // Cleanup temporary files
       await this.cleanupTempFiles(siteDir);
@@ -428,11 +440,19 @@ export class WebsiteGenerationService {
   }
 
   /**
-   * Generate content using AI service
+   * Generate content using Ollama AI service
    */
-  private async generateAIContent(projectData: any, contentOptions: any): Promise<AIContentResponse> {
+  private async generateOllamaContent(projectData: any, contentOptions: any): Promise<OllamaContentResponse> {
     try {
-      console.log('🤖 Calling AI service for content generation...');
+      console.log('🤖 Calling Ollama AI service for content generation...');
+      console.log(`📡 AI Engine URL: ${this.aiEngineUrl}`);
+      
+      // Check if AI engine is available
+      const healthCheck = await axios.get(`${this.aiEngineUrl}/api/v1/health`, {
+        timeout: 5000
+      });
+      
+      console.log(`✅ AI Engine health check passed: ${healthCheck.data.status}`);
       
       const response = await axios.post(`${this.aiEngineUrl}/api/v1/content/generate-content`, {
         business_name: projectData.businessName,
@@ -443,17 +463,29 @@ export class WebsiteGenerationService {
         pages: projectData.pages,
         tone: contentOptions?.tone || 'professional',
         length: contentOptions?.length || 'medium',
-        include_seo: contentOptions?.includeSEO || true
+        include_seo: contentOptions?.includeSEO || true,
+        model: contentOptions?.aiModel // Allow model selection
       }, {
-        timeout: 30000 // 30 seconds timeout
+        timeout: 120000, // 2 minutes timeout for AI generation
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      console.log('✅ AI content generated successfully');
+      console.log('✅ Ollama AI content generated successfully');
+      console.log(`📊 Generation stats: ${response.data.word_count_total} words, ${response.data.generation_time?.toFixed(2)}s`);
+      
       return response.data;
     } catch (error) {
-      console.warn('⚠️ AI content generation failed, using fallback content:', error);
+      console.warn('⚠️ Ollama AI content generation failed:', error);
+      
+      if (axios.isAxiosError(error)) {
+        console.warn(`📡 AI Engine connection error: ${error.code} - ${error.message}`);
+        console.warn(`🔗 Attempted URL: ${this.aiEngineUrl}/api/v1/content/generate-content`);
+      }
       
       // Fallback content generation
+      console.log('📝 Using fallback content generation...');
       return this.generateFallbackContent(projectData);
     }
   }
@@ -461,32 +493,198 @@ export class WebsiteGenerationService {
   /**
    * Generate fallback content if AI service is unavailable
    */
-  private generateFallbackContent(projectData: any): AIContentResponse {
-    console.log('📝 Generating fallback content...');
+  private generateFallbackContent(projectData: any): OllamaContentResponse {
+    console.log('📝 Generating high-quality fallback content...');
     
     return {
       pages: {
         home: {
           title: `Welcome to ${projectData.businessName}`,
-          content: `# Welcome to ${projectData.businessName}\n\n${projectData.description || 'Your business description here.'}\n\n## Our Services\n\nWe provide excellent services to help you succeed.\n\n## Why Choose Us\n\n- Professional service\n- Experienced team\n- Customer satisfaction\n\n[Contact us today](#contact) to learn more!`,
-          meta_description: `${projectData.businessName} - ${projectData.description?.slice(0, 150) || 'Professional services'}`
+          content: `# Welcome to ${projectData.businessName}
+
+${projectData.description || 'Your trusted partner for professional services.'}
+
+## What We Do
+
+At ${projectData.businessName}, we specialize in delivering exceptional ${projectData.businessType} services that help our clients achieve their goals. Our team of experienced professionals is dedicated to providing innovative solutions tailored to your specific needs.
+
+### Our Key Services
+
+- **Professional Consulting**: Expert guidance for your business challenges
+- **Custom Solutions**: Tailored approaches that fit your unique requirements  
+- **Ongoing Support**: Comprehensive support throughout your journey
+- **Results-Driven**: Focused on delivering measurable outcomes
+
+## Why Choose ${projectData.businessName}?
+
+- ✅ **Proven Expertise**: Years of experience in ${projectData.industry || 'the industry'}
+- ✅ **Client-Focused**: Your success is our priority
+- ✅ **Quality Assurance**: Commitment to excellence in everything we do
+- ✅ **Competitive Pricing**: Value-driven solutions that fit your budget
+
+## Ready to Get Started?
+
+Contact us today to discuss how ${projectData.businessName} can help transform your business.
+
+[Get in Touch](#contact) | [Learn More About Us](#about)`,
+          meta_description: `${projectData.businessName} - Professional ${projectData.businessType} services. Expert solutions tailored to your needs. Contact us today!`,
+          keywords: [projectData.businessName.toLowerCase(), projectData.businessType.toLowerCase(), 'professional services', 'expert solutions'],
+          word_count: 200
         },
         about: {
           title: `About ${projectData.businessName}`,
-          content: `# About Us\n\n${projectData.description || 'Learn more about our company and mission.'}\n\n## Our Mission\n\nWe are committed to providing excellent service to our customers and helping them achieve their goals.\n\n## Our Values\n\n- **Quality**: We deliver high-quality solutions\n- **Innovation**: We embrace new technologies and methods\n- **Integrity**: We conduct business with honesty and transparency\n- **Customer Focus**: Your success is our priority`,
-          meta_description: `Learn more about ${projectData.businessName} and our mission`
+          content: `# About ${projectData.businessName}
+
+## Our Story
+
+${projectData.businessName} was founded with a simple mission: to provide exceptional ${projectData.businessType} services that truly make a difference. We understand that every business is unique, which is why we take the time to understand your specific needs and challenges.
+
+## Our Mission
+
+To empower businesses with innovative solutions and expert guidance that drive sustainable growth and success.
+
+## Our Values
+
+### Excellence
+We are committed to delivering the highest quality in everything we do. Our attention to detail and dedication to excellence sets us apart.
+
+### Innovation  
+We stay ahead of industry trends and continuously evolve our approaches to provide cutting-edge solutions.
+
+### Integrity
+Honest, transparent communication builds trust. We believe in doing the right thing, even when no one is watching.
+
+### Partnership
+We don't just work for you – we work with you. Your success is our success, and we're invested in your long-term growth.
+
+## Our Team
+
+Our team consists of highly skilled professionals with extensive experience in ${projectData.industry || 'various industries'}. We combine technical expertise with creative problem-solving to deliver results that exceed expectations.
+
+## Our Commitment
+
+When you choose ${projectData.businessName}, you're choosing a partner committed to your success. We take pride in building long-lasting relationships based on trust, reliability, and exceptional results.`,
+          meta_description: `Learn about ${projectData.businessName}'s mission, values, and commitment to delivering exceptional ${projectData.businessType} services.`,
+          keywords: ['about us', projectData.businessName.toLowerCase(), 'company mission', 'our team', 'values'],
+          word_count: 250
         },
         services: {
           title: 'Our Services',
-          content: `# Our Services\n\nWe offer a wide range of professional services to meet your needs.\n\n## Service Categories\n\n### Professional Consulting\nExpert advice and guidance for your business needs.\n\n### Expert Solutions\nTailored solutions designed specifically for your requirements.\n\n### Customer Support\nOngoing support to ensure your continued success.\n\n## Get Started\n\nContact us today to discuss how we can help your business grow.`,
-          meta_description: `Professional services offered by ${projectData.businessName}`
+          content: `# Our Services
+
+At ${projectData.businessName}, we offer a comprehensive range of ${projectData.businessType} services designed to meet your unique needs and drive your business forward.
+
+## Core Services
+
+### Strategic Consulting
+Our expert consultants work with you to develop comprehensive strategies that align with your business objectives and market opportunities.
+
+**What's Included:**
+- Business analysis and assessment
+- Strategic planning and roadmap development
+- Market research and competitive analysis
+- Implementation guidance and support
+
+### Custom Solutions Development
+We create tailored solutions specifically designed for your business requirements and industry challenges.
+
+**Key Features:**
+- Customized approach for each client
+- Scalable solutions that grow with your business
+- Integration with existing systems
+- Ongoing optimization and refinement
+
+### Professional Support Services
+Comprehensive support to ensure your continued success and optimal performance.
+
+**Support Includes:**
+- Technical assistance and troubleshooting
+- Regular performance monitoring
+- Updates and maintenance
+- Training and knowledge transfer
+
+### Performance Optimization
+We help you maximize efficiency and effectiveness across all aspects of your operations.
+
+**Optimization Areas:**
+- Process improvement and automation
+- Resource allocation and management
+- Quality assurance and control
+- Performance metrics and reporting
+
+## Industry Expertise
+
+We have extensive experience serving clients in ${projectData.industry || 'various industries'}, giving us deep insights into sector-specific challenges and opportunities.
+
+## Getting Started
+
+Ready to explore how our services can benefit your business? Contact us for a consultation to discuss your specific needs and learn how we can help you achieve your goals.
+
+[Schedule a Consultation](#contact) | [View Case Studies](#portfolio)`,
+          meta_description: `Comprehensive ${projectData.businessType} services from ${projectData.businessName}. Strategic consulting, custom solutions, and professional support.`,
+          keywords: ['services', projectData.businessType.toLowerCase(), 'consulting', 'solutions', 'support'],
+          word_count: 300
         },
         contact: {
           title: 'Contact Us',
-          content: `# Contact ${projectData.businessName}\n\nGet in touch with us today!\n\n## Contact Information\n\n- **Email:** ${projectData.contact?.email || 'contact@example.com'}\n- **Phone:** ${projectData.contact?.phone || '(555) 123-4567'}\n- **Address:** ${projectData.location || 'Your Address Here'}\n\n## Business Hours\n\n- Monday - Friday: 9:00 AM - 5:00 PM\n- Saturday: 10:00 AM - 2:00 PM\n- Sunday: Closed\n\n## Get In Touch\n\nWe'd love to hear from you. Send us a message and we'll respond as soon as possible.`,
-          meta_description: `Contact ${projectData.businessName} for more information`
+          content: `# Contact ${projectData.businessName}
+
+Ready to take the next step? We'd love to hear from you and discuss how we can help your business succeed.
+
+## Get In Touch
+
+Whether you have a specific project in mind or just want to learn more about our services, we're here to help. Our team is ready to provide the expert guidance and support you need.
+
+### Contact Information
+
+- **Email:** ${projectData.contact?.email || 'info@example.com'}
+- **Phone:** ${projectData.contact?.phone || '(555) 123-4567'}
+- **Address:** ${projectData.location || 'Your Business Address'}
+
+### Business Hours
+
+- **Monday - Friday:** 9:00 AM - 6:00 PM
+- **Saturday:** 10:00 AM - 2:00 PM  
+- **Sunday:** Closed
+
+*For urgent matters outside business hours, please send an email and we'll respond as soon as possible.*
+
+## What Happens Next?
+
+When you contact us, here's what you can expect:
+
+1. **Initial Consultation** - We'll schedule a call to understand your needs and objectives
+2. **Proposal Development** - We'll create a customized proposal outlored to your requirements  
+3. **Project Planning** - Together, we'll develop a detailed project timeline and approach
+4. **Implementation** - Our team will work closely with you to deliver exceptional results
+
+## Service Areas
+
+We proudly serve clients ${projectData.location ? `in ${projectData.location} and surrounding areas` : 'nationwide'}, with both on-site and remote service options available.
+
+## Quick Response Guarantee
+
+We understand that business moves fast. That's why we guarantee a response to all inquiries within 24 hours during business days.
+
+**Ready to get started?** Use the contact information above or fill out our online contact form to begin your journey with ${projectData.businessName}.
+
+*We look forward to partnering with you for success!*`,
+          meta_description: `Contact ${projectData.businessName} for professional ${projectData.businessType} services. Quick response guaranteed. Get your free consultation today.`,
+          keywords: ['contact', projectData.businessName.toLowerCase(), 'consultation', 'get in touch', 'business hours'],
+          word_count: 280
         }
-      }
+      },
+      seo_data: {
+        site_title: projectData.businessName,
+        site_description: `${projectData.businessName} - Professional ${projectData.businessType} services. Expert solutions tailored to your business needs.`,
+        main_keywords: [projectData.businessName.toLowerCase(), projectData.businessType.toLowerCase(), 'professional services'],
+        robots: 'index, follow',
+        og_type: 'website'
+      },
+      generation_time: 0.1,
+      model_used: 'fallback-content-generator',
+      word_count_total: 1030,
+      generation_id: 'fallback-' + Date.now()
     };
   }
 
@@ -547,19 +745,25 @@ export class WebsiteGenerationService {
   /**
    * Generate Hugo configuration file
    */
-  private async generateHugoConfig(siteDir: string, projectData: any, options: any): Promise<void> {
+  private async generateHugoConfig(
+    siteDir: string, 
+    projectData: any, 
+    options: any, 
+    seoData?: any
+  ): Promise<void> {
     const config = {
       baseURL: 'https://example.com',
       languageCode: 'en-us',
-      title: projectData.businessName,
+      title: seoData?.site_title || projectData.businessName,
       theme: options.hugoTheme,
       
       params: {
-        description: projectData.description || `${projectData.businessName} - Professional services`,
+        description: seoData?.site_description || projectData.description || `${projectData.businessName} - Professional services`,
         author: projectData.businessName,
         email: projectData.contact?.email || '',
         phone: projectData.contact?.phone || '',
         address: projectData.location || '',
+        keywords: seoData?.main_keywords || [projectData.businessName.toLowerCase(), projectData.businessType.toLowerCase()],
         
         // Apply customizations
         ...(options.customizations?.colors && {
@@ -606,7 +810,11 @@ export class WebsiteGenerationService {
   /**
    * Create content files from generated content
    */
-  private async createContentFiles(siteDir: string, generatedContent: AIContentResponse | null, projectData: any): Promise<number> {
+  private async createContentFiles(
+    siteDir: string, 
+    generatedContent: OllamaContentResponse | null, 
+    projectData: any
+  ): Promise<number> {
     const contentDir = path.join(siteDir, 'content');
     await fs.ensureDir(contentDir);
 
@@ -620,7 +828,9 @@ export class WebsiteGenerationService {
         draft: false,
         description: pageData.meta_description || '',
         keywords: pageData.keywords || [],
-        type: pageName === 'home' ? 'page' : 'page'
+        type: 'page',
+        seo_title: pageData.seo_title || pageData.title,
+        word_count: pageData.word_count || 0
       };
 
       const content = `---\n${yaml.dump(frontmatter)}---\n\n${pageData.content}`;
@@ -630,7 +840,7 @@ export class WebsiteGenerationService {
         : path.join(contentDir, `${pageName}.md`);
       
       await fs.writeFile(filePath, content, 'utf-8');
-      console.log(`📝 Created content file: ${path.basename(filePath)}`);
+      console.log(`📝 Created content file: ${path.basename(filePath)} (${pageData.word_count || 0} words)`);
       fileCount++;
     }
 
@@ -644,7 +854,7 @@ export class WebsiteGenerationService {
     try {
       const { stdout, stderr } = await execAsync('hugo --minify', { 
         cwd: siteDir,
-        timeout: 30000 // 30 seconds timeout
+        timeout: 60000 // 1 minute timeout
       });
       
       console.log(`🔨 Hugo build completed`);

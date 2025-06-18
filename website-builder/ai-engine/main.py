@@ -1,3 +1,6 @@
+# File: ai-engine/main.py
+# Updated to include the new content generation router
+
 """
 AI Engine FastAPI Application
 Main entry point for the AI-powered content generation engine
@@ -22,6 +25,7 @@ from src.services.ollama_client import OllamaClient
 from src.services.model_manager import ModelManager
 from src.api.health import router as health_router
 from src.api.generation import router as generation_router
+from src.api.content import router as content_router  # NEW: Import content router
 
 # Load environment variables
 load_dotenv()
@@ -54,7 +58,8 @@ model_manager: ModelManager = None
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     global ollama_client, model_manager
-      # Startup
+    
+    # Startup
     logger.info("Starting AI Engine...")
     
     try:
@@ -126,11 +131,11 @@ app.add_middleware(
         "http://localhost:3001",  # Backend API
         "http://frontend:3000",   # Docker frontend
         "http://backend:3001",    # Docker backend
-        os.getenv("FRONTEND_URL", ""),
-        os.getenv("BACKEND_URL", ""),
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -141,71 +146,49 @@ app.add_middleware(
         "localhost",
         "127.0.0.1",
         "0.0.0.0",
+        "frontend",
+        "backend",
         "ai-engine",
-        os.getenv("ALLOWED_HOST", ""),
     ]
 )
 
-# Request logging middleware
+# Request ID middleware
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all HTTP requests with timing and metadata"""
-    
+async def add_request_id(request: Request, call_next):
+    """Add unique request ID to each request"""
     request_id = str(uuid.uuid4())
-    start_time = time.time()
-    
-    # Add request ID to state
     request.state.request_id = request_id
     
-    # Log request
+    start_time = time.time()
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(process_time)
+    
     logger.info(
-        "Request started",
+        "Request processed",
         request_id=request_id,
         method=request.method,
         url=str(request.url),
-        client_ip=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        status_code=response.status_code,
+        process_time=process_time
     )
     
-    try:
-        response = await call_next(request)
-        
-        # Calculate duration
-        duration = time.time() - start_time
-        
-        # Log response
-        logger.info(
-            "Request completed",
-            request_id=request_id,
-            status_code=response.status_code,
-            duration=round(duration, 3),
-        )
-        
-        return response
-        
-    except Exception as e:
-        duration = time.time() - start_time
-        
-        logger.error(
-            "Request failed",
-            request_id=request_id,
-            error=str(e),
-            duration=round(duration, 3),
-        )
-        
-        raise
+    return response
 
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled errors"""
+    """Handle all unhandled exceptions"""
     
     request_id = getattr(request.state, 'request_id', 'unknown')
     
     logger.error(
         "Unhandled exception",
         request_id=request_id,
-        error=str(exc),
+        exception=str(exc),
         error_type=type(exc).__name__,
         path=request.url.path,
         method=request.method,
@@ -265,18 +248,21 @@ async def root():
         "timestamp": datetime.utcnow().isoformat(),
         "docs_url": "/docs",
         "health_url": "/health",
+        "models_url": "/api/v1/health/models",
+        "content_generation_url": "/api/v1/content/generate-content"
     }
 
 # Include routers
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(generation_router, prefix="/api/v1")
+app.include_router(content_router, prefix="/api/v1")  # NEW: Include content router
 
 # Development server
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=int(os.getenv("PORT", "3002")),
+        port=int(os.getenv("PORT", "8000")),  # Changed default port to 8000
         reload=os.getenv("ENVIRONMENT") == "development",
         log_level="info",
         access_log=True,
