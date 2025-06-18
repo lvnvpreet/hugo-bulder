@@ -1,5 +1,4 @@
-import { SiteGenerationStatus } from '@prisma/client';
-
+// Generation types and validation
 export interface GenerationStep {
   id: string;
   name: string;
@@ -11,32 +10,9 @@ export interface GenerationStep {
   error?: string;
 }
 
-export interface GenerationWebhook {
-  url: string;
-  events: ('started' | 'progress' | 'completed' | 'failed')[];
-  headers?: Record<string, string>;
-}
-
-export interface GenerationMetrics {
-  totalFiles: number;
-  totalSize: number;
-  buildTime: number;
-  processingSteps: GenerationStep[];
-}
-
-export interface AIGeneratedPage {
-  title: string;
-  content: string;
-  slug: string;
-  description?: string;
-  keywords?: string[];
-  sections: ContentSection[];
-}
-
-export interface ContentSection {
-  id: string;
+export interface ContentPage {
   type: string;
-  title?: string;
+  title: string;
   content: string;
   data: Record<string, any>;
   order: number;
@@ -168,11 +144,11 @@ export type GenerationError = keyof typeof GENERATION_ERRORS;
 
 export class GenerationValidationError extends Error {
   constructor(
-    public code: GenerationError,
+    public code: string,
     message?: string,
     public details?: any
   ) {
-    super(message || GENERATION_ERRORS[code]);
+    super(message || GENERATION_ERRORS[code as GenerationError]);
     this.name = 'GenerationValidationError';
   }
 }
@@ -245,48 +221,8 @@ export function calculateGenerationProgress(steps: GenerationStep[]): number {
   
   if (runningSteps.length > 0) {
     const runningProgress = runningSteps.reduce((sum, step) => sum + step.progress, 0);
-    return Math.round(((completedSteps * 100) + runningProgress) / totalSteps);
+    return Math.round(((completedSteps + runningProgress / 100) / totalSteps) * 100);
   }
   
   return Math.round((completedSteps / totalSteps) * 100);
-}
-
-export function getGenerationStatusFromSteps(steps: GenerationStep[]): SiteGenerationStatus {
-  if (steps.some(step => step.status === 'failed')) {
-    return SiteGenerationStatus.FAILED;
-  }
-  
-  if (steps.every(step => step.status === 'completed')) {
-    return SiteGenerationStatus.COMPLETED;
-  }
-  
-  if (steps.some(step => step.status === 'running')) {
-    const runningStep = steps.find(step => step.status === 'running');
-    
-    if (runningStep?.id === 'initializing') {
-      return 'INITIALIZING' as any;
-    }
-    
-    if (runningStep?.id === 'building_structure') {
-      return 'BUILDING_STRUCTURE' as any;
-    }
-    
-    if (runningStep?.id === 'applying_theme') {
-      return 'APPLYING_THEME' as any;
-    }
-    
-    if (runningStep?.id === 'generating_content') {
-      return SiteGenerationStatus.GENERATING_CONTENT;
-    }
-    
-    if (runningStep?.id === 'building_site') {
-      return SiteGenerationStatus.BUILDING_SITE;
-    }
-    
-    if (runningStep?.id === 'packaging') {
-      return SiteGenerationStatus.PACKAGING;
-    }
-  }
-  
-  return SiteGenerationStatus.PENDING;
 }

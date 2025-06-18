@@ -182,6 +182,14 @@ model SiteGeneration {
   projectId        String
   status           SiteGenerationStatus @default(PENDING)
   hugoTheme        String
+  
+  // NEW: Progress tracking fields
+  progress         Int?                 @default(0)
+  currentStep      String?              @default("Initializing...")
+  customizations   Json?                // Store generation customizations
+  contentOptions   Json?                // Store content generation options
+  
+  // Existing fields
   buildLog         String?
   errorLog         String?
   siteUrl          String?

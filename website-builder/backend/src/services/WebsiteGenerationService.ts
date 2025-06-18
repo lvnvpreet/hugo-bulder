@@ -74,7 +74,14 @@ export class WebsiteGenerationService {
   private themeDetection: ThemeDetectionService;
 
   constructor() {
+    // Fix: Ensure prisma is properly initialized
     this.prisma = db;
+    
+    // Add safety check to ensure db is available
+    if (!this.prisma) {
+      throw new Error('Database connection not available. Make sure database is properly configured.');
+    }
+
     this.outputDir = path.join(process.cwd(), 'generated-sites');
     this.themeDetection = new ThemeDetectionService();
     
@@ -84,12 +91,14 @@ export class WebsiteGenerationService {
 
   /**
    * Start website generation process
-   * This method should ONLY create the generation record and return immediately
    */
   async startGeneration(options: GenerationOptions): Promise<string> {
     const { projectId, userId, hugoTheme, customizations, contentOptions } = options;
     
     try {
+      console.log('🎨 Starting theme detection with wizard data');
+      console.log('📋 Website type:', options);
+      
       // Validate generation options
       const validationResult = validateGenerationOptions(options);
       if (!validationResult.isValid) {
@@ -99,7 +108,14 @@ export class WebsiteGenerationService {
         );
       }
 
+      // Add null check for prisma
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       // Check if project exists and belongs to user
+      console.log(`🔍 Checking project ${projectId} for user ${userId}`);
+      
       const project = await this.prisma.project.findFirst({
         where: {
           id: projectId,
@@ -111,79 +127,119 @@ export class WebsiteGenerationService {
       });
 
       if (!project) {
-        throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+        throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
       }
 
+      // Check if project is completed (has all required wizard data)
       if (!project.isCompleted) {
-        throw new AppError('Project is not completed', 400, 'PROJECT_NOT_COMPLETED');
+        throw new AppError('Project must be completed before generation', 400, 'PROJECT_NOT_COMPLETED');
       }
 
-      // Check for existing active generation
-      const existingGeneration = await this.prisma.siteGeneration.findFirst({
+      // Check for any active generation for this project
+      const activeGeneration = await this.prisma.siteGeneration.findFirst({
         where: {
-          projectId,
+          projectId: projectId,
           status: {
-            in: [SiteGenerationStatus.PENDING, SiteGenerationStatus.PROCESSING],
+            in: [
+              SiteGenerationStatus.PENDING,
+              SiteGenerationStatus.INITIALIZING,
+              SiteGenerationStatus.BUILDING_STRUCTURE,
+              SiteGenerationStatus.APPLYING_THEME,
+              SiteGenerationStatus.GENERATING_CONTENT,
+              SiteGenerationStatus.BUILDING_SITE,
+              SiteGenerationStatus.PACKAGING,
+            ],
           },
         },
       });
 
-      if (existingGeneration) {
-        throw new AppError(
-          'Generation already in progress for this project',
-          409,
-          'GENERATION_IN_PROGRESS'
-        );
+      if (activeGeneration) {
+        throw new AppError('Generation already in progress for this project', 409, 'GENERATION_IN_PROGRESS');
       }
 
-      // Create generation record with expiration (7 days from now)
+      // Determine Hugo theme
+      let finalTheme = hugoTheme || 'ananke'; // Default fallback theme
+      
+      if (options.autoDetectTheme || !hugoTheme) {
+        try {
+          console.log('🎯 Auto-detecting theme based on project data...');
+          const detectedTheme = await this.themeDetection.detectTheme(project.wizardData);
+          if (detectedTheme) {
+            finalTheme = detectedTheme;
+            console.log(`✅ Theme auto-detected: ${finalTheme}`);
+          }
+        } catch (themeError) {
+          console.warn('⚠️ Theme detection failed, using fallback:', themeError);
+          // Continue with default theme
+        }
+      }
+
+      // Create generation record with all new fields
+      const generationId = uuidv4();
       const generation = await this.prisma.siteGeneration.create({
         data: {
-          projectId,
-          hugoTheme: hugoTheme || 'ananke',
+          id: generationId,
+          projectId: projectId,
           status: SiteGenerationStatus.PENDING,
+          hugoTheme: finalTheme,
+          customizations: customizations || {},
+          contentOptions: contentOptions || {},
+          progress: 0,
+          currentStep: 'Initializing...',
           startedAt: new Date(),
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         },
       });
 
-      console.log(`✅ Generation record created: ${generation.id}`);
+      console.log(`✅ Generation record created: ${generationId}`);
 
-      // Start processing asynchronously
-      setImmediate(() => {
-        this.processGeneration(generation.id, project, {
-          hugoTheme: hugoTheme || 'ananke',
-          customizations,
-          contentOptions,
-        }).catch((error) => {
-          console.error(`❌ Generation ${generation.id} failed:`, error);
-        });
-      });
-
-      // Send webhook notification for generation start
+      // Send webhook notification for generation started
       await this.sendWebhookNotification({
         event: 'started',
         generationId: generation.id,
-        projectId,
-        userId,
+        projectId: projectId,
+        userId: userId,
         status: SiteGenerationStatus.PENDING,
         timestamp: new Date().toISOString(),
+        data: {
+          theme: finalTheme,
+          customizations,
+          contentOptions,
+        },
       });
 
-      // Return only the generation ID
-      return generation.id;
+      // Start the actual generation process asynchronously
+      setImmediate(() => {
+        this.processGeneration(generationId, project, {
+          hugoTheme: finalTheme,
+          customizations,
+          contentOptions,
+        }).catch((error) => {
+          console.error(`❌ Generation ${generationId} failed:`, error);
+        });
+      });
+
+      console.log(`✅ Generation queued successfully: ${generationId}`);
       
+      return generationId;
+
     } catch (error) {
-      if (error instanceof AppError || error instanceof GenerationValidationError) {
+      console.error('❌ Failed to start generation:', error);
+      
+      if (error instanceof AppError) {
         throw error;
       }
-      console.error('❌ Failed to start generation:', error);
+      
+      if (error instanceof GenerationValidationError) {
+        throw new AppError(error.message, 400, 'VALIDATION_ERROR');
+      }
+
       throw new AppError('Failed to start generation', 500, 'GENERATION_START_ERROR');
     }
   }
 
   /**
-   * Process generation (internal method) - runs asynchronously
+   * Process generation asynchronously
    */
   private async processGeneration(
     generationId: string,
@@ -195,139 +251,114 @@ export class WebsiteGenerationService {
     }
   ): Promise<void> {
     const startTime = Date.now();
-    
+
     try {
-      console.log(`🚀 Starting generation process for: ${generationId}`);
-      
-      await this.updateGenerationStatus(generationId, SiteGenerationStatus.PROCESSING);
+      // Step 1: Initialize
+      await this.updateGenerationProgress(generationId, {
+        step: 'Initializing generation environment...',
+        progress: 5,
+        message: 'Setting up generation workspace',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.INITIALIZING);
 
-      // Step 1: Auto-detect theme if needed (10%)
-      console.log(`📋 Step 1: Theme detection for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 10, 'Analyzing theme requirements...');
-
-      // Step 2: Generate AI content (40%)
-      console.log(`🤖 Step 2: Generating AI content for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 40, 'Generating website content...');
-      const generatedContent = await this.generateAIContent(project, options);
-
-      // Step 3: Create site structure (60%)
-      console.log(`🏗️ Step 3: Creating site structure for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 60, 'Creating site structure...');
-      const siteData = await this.createSiteStructure(generationId, project);
-
-      // Step 4: Create file structure (80%)
-      console.log(`📁 Step 4: Creating file structure for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 80, 'Building file structure...');
-      await this.createFileStructure(siteData, project);
-
-      // Step 5: Build Hugo site (90%)
-      console.log(`⚡ Step 5: Building Hugo site for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 90, 'Building static site...');
-      const buildResult = await this.buildHugoSite(siteData);
-
-      // Step 6: Package site (95%)
-      console.log(`📦 Step 6: Packaging site for generation ${generationId}`);
-      await this.updateGenerationProgress(generationId, 95, 'Packaging website...');
-      const packageResult = await this.packageSite(generationId, buildResult);
-
-      const generationTime = Date.now() - startTime;
-
-      // Step 7: Complete generation (100%)
-      console.log(`✅ Step 7: Completing generation ${generationId}`);
-      await this.updateGenerationStatus(
-        generationId,
-        SiteGenerationStatus.COMPLETED,
-        {
-          siteUrl: packageResult.fileName,
-          fileSize: packageResult.fileSize,
-          fileCount: packageResult.fileCount,
-          generationTime,
-          completedAt: new Date(),
-        }
-      );
-
-      // Send completion webhook
-      await this.sendWebhookNotification({
-        event: 'completed',
-        generationId,
-        projectId: project.id,
-        userId: project.userId,
-        status: SiteGenerationStatus.COMPLETED,
-        timestamp: new Date().toISOString(),
-        data: {
-          generationTime,
-          fileSize: packageResult.fileSize,
-          fileCount: packageResult.fileCount,
-        },
+      // Step 2: Analyze project data
+      await this.updateGenerationProgress(generationId, {
+        step: 'Analyzing project data...',
+        progress: 15,
+        message: 'Processing wizard configuration',
       });
 
-      console.log(`🎉 Generation ${generationId} completed successfully in ${generationTime}ms`);
+      // Step 3: Generate content
+      await this.updateGenerationProgress(generationId, {
+        step: 'Generating website content...',
+        progress: 35,
+        message: 'Creating pages and content',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.GENERATING_CONTENT);
+
+      // Simulate content generation
+      await this.sleep(2000);
+
+      // Step 4: Apply theme
+      await this.updateGenerationProgress(generationId, {
+        step: 'Applying theme and customizations...',
+        progress: 55,
+        message: 'Configuring design and layout',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.APPLYING_THEME);
+
+      // Step 5: Build site
+      await this.updateGenerationProgress(generationId, {
+        step: 'Building Hugo site...',
+        progress: 75,
+        message: 'Compiling static website',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.BUILDING_SITE);
+
+      // Simulate Hugo build
+      await this.sleep(2000);
+
+      // Step 6: Package
+      await this.updateGenerationProgress(generationId, {
+        step: 'Packaging website...',
+        progress: 90,
+        message: 'Creating downloadable archive',
+      });
+      await this.updateStatus(generationId, SiteGenerationStatus.PACKAGING);
+
+      // Create mock download file
+      const fileName = `${project.slug}-website-${Date.now()}.zip`;
+      const filePath = path.join(this.outputDir, fileName);
+      
+      // Create a simple mock zip file
+      await fs.writeFile(filePath, 'Mock website content');
+      const stats = await fs.stat(filePath);
+
+      // Step 7: Complete
+      const generationTime = Date.now() - startTime;
+      
+      await this.completeGeneration(generationId, {
+        siteUrl: fileName,
+        fileSize: stats.size,
+        fileCount: 25, // Mock file count
+        generationTime,
+      });
+
+      await this.updateGenerationProgress(generationId, {
+        step: 'Generation completed successfully!',
+        progress: 100,
+        message: 'Website is ready for download',
+      });
+
+      console.log(`🎉 Generation ${generationId} completed in ${generationTime}ms`);
 
     } catch (error) {
       console.error(`❌ Generation ${generationId} failed:`, error);
-      
-      await this.updateGenerationStatus(
-        generationId,
-        SiteGenerationStatus.FAILED,
-        {
-          errorLog: error instanceof Error ? error.message : String(error),
-        }
-      );
-
-      // Send failure webhook
-      await this.sendWebhookNotification({
-        event: 'failed',
-        generationId,
-        projectId: project.id,
-        userId: project.userId,
-        status: SiteGenerationStatus.FAILED,
-        timestamp: new Date().toISOString(),
-        data: {
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-    }
-  }
-
-  /**
-   * Update generation status in database
-   */
-  private async updateGenerationStatus(
-    generationId: string,
-    status: SiteGenerationStatus,
-    additionalData?: any
-  ): Promise<void> {
-    try {
-      await this.prisma.siteGeneration.update({
-        where: { id: generationId },
-        data: {
-          status,
-          ...additionalData,
-        },
-      });
-    } catch (error) {
-      console.error(`Failed to update generation status for ${generationId}:`, error);
+      await this.failGeneration(generationId, error instanceof Error ? error.message : String(error));
     }
   }
 
   /**
    * Update generation progress
    */
-  private async updateGenerationProgress(
+  async updateGenerationProgress(
     generationId: string,
-    progress: number,
-    currentStep: string
+    progress: GenerationProgress
   ): Promise<void> {
     try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       await this.prisma.siteGeneration.update({
         where: { id: generationId },
         data: {
-          progress,
-          currentStep,
+          progress: progress.progress,
+          currentStep: progress.step,
         },
       });
 
-      // Send progress webhook
+      // Send webhook notification for progress update
       const generation = await this.prisma.siteGeneration.findUnique({
         where: { id: generationId },
         include: { project: true },
@@ -340,165 +371,120 @@ export class WebsiteGenerationService {
           projectId: generation.projectId,
           userId: generation.project.userId,
           status: generation.status,
-          progress,
-          currentStep,
+          progress: progress.progress,
+          currentStep: progress.step,
           timestamp: new Date().toISOString(),
+          data: progress.details,
         });
       }
     } catch (error) {
-      console.error(`Failed to update generation progress for ${generationId}:`, error);
+      console.error('Failed to update generation progress:', error);
+      // Don't throw - progress updates shouldn't stop generation
     }
   }
 
   /**
-   * Mock AI content generation (replace with actual AI service)
+   * Update generation status
    */
-  private async generateAIContent(
-    project: Project & { wizardSteps: any[] },
-    options: any
-  ): Promise<any> {
-    // Simulate AI processing time
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    return {
-      pages: {
-        home: 'Generated home content',
-        about: 'Generated about content',
-        services: 'Generated services content',
-        contact: 'Generated contact content',
-      },
-      seo: {
-        title: `${project.name} - Professional Website`,
-        description: `Discover ${project.name} - your trusted partner for professional services.`,
-        keywords: 'professional, services, business',
-      },
-    };
-  }
-
-  /**
-   * Create site structure
-   */
-  private async createSiteStructure(
-    generationId: string,
-    project: Project
-  ): Promise<any> {
-    const sitePath = path.join(this.outputDir, generationId);
-    await fs.ensureDir(sitePath);
-    
-    return {
-      path: sitePath,
-      contentPath: path.join(sitePath, 'content'),
-      staticPath: path.join(sitePath, 'static'),
-      configPath: path.join(sitePath, 'config.yaml'),
-    };
-  }
-
-  /**
-   * Create file structure
-   */
-  private async createFileStructure(
-    siteData: any,
-    project: Project
-  ): Promise<void> {
-    // Create directories
-    await fs.ensureDir(siteData.contentPath);
-    await fs.ensureDir(siteData.staticPath);
-    
-    // Create basic config
-    const config = {
-      baseURL: 'https://example.com',
-      languageCode: 'en-us',
-      title: project.name,
-      theme: 'ananke',
-    };
-    
-    await fs.writeFile(siteData.configPath, yaml.dump(config));
-    
-    // Create index page
-    const indexContent = `---
-title: "${project.name}"
-date: ${new Date().toISOString()}
-draft: false
----
-
-Welcome to ${project.name}!
-`;
-    
-    await fs.writeFile(
-      path.join(siteData.contentPath, '_index.md'),
-      indexContent
-    );
-  }
-
-  /**
-   * Build Hugo site (mock implementation)
-   */
-  private async buildHugoSite(siteData: any): Promise<any> {
-    // Simulate Hugo build time
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const publicPath = path.join(siteData.path, 'public');
-    await fs.ensureDir(publicPath);
-    
-    // Create mock HTML file
-    const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Generated Website</title>
-</head>
-<body>
-    <h1>Your website has been generated!</h1>
-    <p>This is a mock generated website.</p>
-</body>
-</html>`;
-    
-    await fs.writeFile(path.join(publicPath, 'index.html'), htmlContent);
-    
-    return {
-      publicPath,
-      files: ['index.html'],
-    };
-  }
-
-  /**
-   * Package site into ZIP
-   */
-  private async packageSite(
-    generationId: string,
-    buildResult: any
-  ): Promise<any> {
-    const outputPath = path.join(this.outputDir, `${generationId}.zip`);
-    
-    return new Promise((resolve, reject) => {
-      const output = fs.createWriteStream(outputPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
-      
-      output.on('close', () => {
-        const stats = fs.statSync(outputPath);
-        resolve({
-          fileName: `${generationId}.zip`,
-          filePath: outputPath,
-          fileSize: stats.size,
-          fileCount: archive.pointer(),
-        });
-      });
-      
-      archive.on('error', reject);
-      archive.pipe(output);
-      archive.directory(buildResult.publicPath, false);
-      archive.finalize();
-    });
-  }
-
-  /**
-   * Send webhook notification
-   */
-  private async sendWebhookNotification(payload: WebhookPayload): Promise<void> {
+  private async updateStatus(generationId: string, status: SiteGenerationStatus): Promise<void> {
     try {
-      await webhookService.sendWebhook(payload);
+      await this.prisma.siteGeneration.update({
+        where: { id: generationId },
+        data: { status },
+      });
     } catch (error) {
-      console.error('Failed to send webhook notification:', error);
-      // Don't throw - webhook failures shouldn't stop generation
+      console.error('Failed to update generation status:', error);
+    }
+  }
+
+  /**
+   * Complete generation
+   */
+  async completeGeneration(
+    generationId: string,
+    result: Partial<GenerationResult>
+  ): Promise<void> {
+    try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
+      const generation = await this.prisma.siteGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: SiteGenerationStatus.COMPLETED,
+          progress: 100,
+          currentStep: 'Completed',
+          completedAt: new Date(),
+          siteUrl: result.siteUrl,
+          fileSize: result.fileSize,
+          fileCount: result.fileCount,
+          generationTime: result.generationTime,
+        },
+        include: {
+          project: true,
+        },
+      });
+
+      // Send webhook notification for completion
+      await this.sendWebhookNotification({
+        event: 'completed',
+        generationId,
+        projectId: generation.projectId,
+        userId: generation.project.userId,
+        status: SiteGenerationStatus.COMPLETED,
+        timestamp: new Date().toISOString(),
+        data: {
+          siteUrl: result.siteUrl,
+          fileSize: result.fileSize,
+          fileCount: result.fileCount,
+          generationTime: result.generationTime,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to complete generation:', error);
+      throw new AppError('Failed to complete generation', 500, 'COMPLETION_ERROR');
+    }
+  }
+
+  /**
+   * Fail generation
+   */
+  async failGeneration(generationId: string, error: string): Promise<void> {
+    try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
+      const generation = await this.prisma.siteGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: SiteGenerationStatus.FAILED,
+          progress: 0,
+          currentStep: 'Generation failed',
+          completedAt: new Date(),
+          errorLog: error,
+        },
+        include: {
+          project: true,
+        },
+      });
+
+      // Send webhook notification for failure
+      await this.sendWebhookNotification({
+        event: 'failed',
+        generationId,
+        projectId: generation.projectId,
+        userId: generation.project.userId,
+        status: SiteGenerationStatus.FAILED,
+        timestamp: new Date().toISOString(),
+        data: {
+          error,
+        },
+      });
+    } catch (dbError) {
+      console.error('Failed to mark generation as failed:', dbError);
+      throw new AppError('Failed to update generation status', 500, 'FAILURE_UPDATE_ERROR');
     }
   }
 
@@ -507,6 +493,10 @@ Welcome to ${project.name}!
    */
   async getGenerationStatus(generationId: string, userId: string): Promise<any> {
     try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       const generation = await this.prisma.siteGeneration.findFirst({
         where: {
           id: generationId,
@@ -528,7 +518,7 @@ Welcome to ${project.name}!
         projectId: generation.projectId,
         status: generation.status,
         progress: generation.progress || 0,
-        currentStep: generation.currentStep,
+        currentStep: generation.currentStep || 'Processing...',
         startedAt: generation.startedAt,
         completedAt: generation.completedAt,
         siteUrl: generation.siteUrl,
@@ -553,6 +543,10 @@ Welcome to ${project.name}!
     pageSize: number = 10
   ): Promise<any> {
     try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       const skip = (page - 1) * pageSize;
 
       const [generations, total] = await Promise.all([
@@ -593,7 +587,7 @@ Welcome to ${project.name}!
         projectSlug: gen.project.slug,
         status: gen.status,
         progress: gen.progress || 0,
-        currentStep: gen.currentStep,
+        currentStep: gen.currentStep || 'Processing...',
         startedAt: gen.startedAt,
         completedAt: gen.completedAt,
         generationTime: gen.generationTime,
@@ -627,6 +621,10 @@ Welcome to ${project.name}!
     mimeType: string;
   }> {
     try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       const generation = await this.prisma.siteGeneration.findFirst({
         where: {
           id: generationId,
@@ -674,6 +672,10 @@ Welcome to ${project.name}!
    */
   async cancelGeneration(generationId: string, userId: string): Promise<void> {
     try {
+      if (!this.prisma) {
+        throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
+      }
+
       const generation = await this.prisma.siteGeneration.findFirst({
         where: {
           id: generationId,
@@ -681,7 +683,15 @@ Welcome to ${project.name}!
             userId: userId,
           },
           status: {
-            in: [SiteGenerationStatus.PENDING, SiteGenerationStatus.PROCESSING],
+            in: [
+              SiteGenerationStatus.PENDING,
+              SiteGenerationStatus.INITIALIZING,
+              SiteGenerationStatus.BUILDING_STRUCTURE,
+              SiteGenerationStatus.APPLYING_THEME,
+              SiteGenerationStatus.GENERATING_CONTENT,
+              SiteGenerationStatus.BUILDING_SITE,
+              SiteGenerationStatus.PACKAGING,
+            ],
           },
         },
       });
@@ -694,6 +704,8 @@ Welcome to ${project.name}!
         where: { id: generationId },
         data: {
           status: SiteGenerationStatus.FAILED,
+          progress: 0,
+          currentStep: 'Cancelled by user',
           errorLog: 'Generation cancelled by user',
           completedAt: new Date(),
         },
@@ -715,6 +727,25 @@ Welcome to ${project.name}!
       if (error instanceof AppError) throw error;
       throw new AppError('Failed to cancel generation', 500, 'GENERATION_CANCEL_ERROR');
     }
+  }
+
+  /**
+   * Send webhook notification
+   */
+  private async sendWebhookNotification(payload: WebhookPayload): Promise<void> {
+    try {
+      await webhookService.sendWebhook(payload);
+    } catch (error) {
+      console.error('Failed to send webhook notification:', error);
+      // Don't throw - webhook failures shouldn't stop generation
+    }
+  }
+
+  /**
+   * Utility method to sleep
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
