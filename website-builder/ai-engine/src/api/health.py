@@ -1,376 +1,347 @@
 """
 Health Check API Endpoints
-Provides health monitoring and status information for the AI engine
+Provides comprehensive health monitoring for the AI Engine service
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any, List
 from datetime import datetime
+import time
 import psutil
-import os
+import structlog
 
 from ..services.ollama_client import OllamaClient
 from ..services.model_manager import ModelManager
+from ..services.service_communication import ServiceCommunication
+from ..config import settings
 
-router = APIRouter(prefix="/health", tags=["health"])
+logger = structlog.get_logger()
+router = APIRouter()
 
-class HealthResponse(BaseModel):
-    status: str
-    timestamp: str
-    uptime_seconds: Optional[float] = None
-
-class DetailedHealthResponse(BaseModel):
-    status: str
-    timestamp: str
-    uptime_seconds: float
-    ollama_status: Dict[str, Any]
-    models_status: Dict[str, Any]
-    system_resources: Dict[str, Any]
-    errors: List[str] = []
-    warnings: List[str] = []
-
-class ModelListResponse(BaseModel):
-    models: List[str]
-    total_count: int
-    timestamp: str
-
-class ModelPullResponse(BaseModel):
-    success: bool
-    message: str
-    model_name: str
-    timestamp: str
-
-# Startup time for uptime calculation
-startup_time = datetime.utcnow()
-
-def get_ollama_client() -> OllamaClient:
-    """Dependency to get Ollama client from app state"""
+# Dependency injection functions
+async def get_ollama_client() -> OllamaClient:
+    """Get Ollama client from app state"""
     from main import app
     return app.state.ollama_client
 
-def get_model_manager() -> ModelManager:
-    """Dependency to get model manager from app state"""
+async def get_model_manager() -> ModelManager:
+    """Get model manager from app state"""
     from main import app
     return app.state.model_manager
 
-@router.get("/", response_model=HealthResponse)
-async def basic_health():
-    """Basic health check endpoint"""
-    
-    uptime = (datetime.utcnow() - startup_time).total_seconds()
-    
-    return HealthResponse(
-        status="healthy",
-        timestamp=datetime.utcnow().isoformat(),
-        uptime_seconds=uptime
-    )
+async def get_service_communication() -> ServiceCommunication:
+    """Get service communication from app state"""
+    from main import app
+    return app.state.service_communication
 
-@router.get("/detailed", response_model=DetailedHealthResponse)
-async def detailed_health(
+@router.get("/health")
+async def health_check(
     ollama_client: OllamaClient = Depends(get_ollama_client),
-    model_manager: ModelManager = Depends(get_model_manager)
+    model_manager: ModelManager = Depends(get_model_manager),
+    service_comm: ServiceCommunication = Depends(get_service_communication)
 ):
-    """Comprehensive health report"""
+    """
+    Comprehensive health check endpoint
+    Returns detailed status of all service components
+    """
     
-    uptime = (datetime.utcnow() - startup_time).total_seconds()
-    errors = []
-    warnings = []
-    overall_status = "healthy"
-    
-    # Check Ollama status
-    ollama_status = {"healthy": False, "error": "Not initialized"}
-    if ollama_client:
-        try:
-            ollama_status = await ollama_client.get_status()
-            if not ollama_status.get("healthy", False):
-                warnings.append("Ollama service is not responding")
-                overall_status = "degraded"
-        except Exception as e:
-            errors.append(f"Ollama status check failed: {str(e)}")
-            overall_status = "degraded"
-    else:
-        errors.append("Ollama client not initialized")
-        overall_status = "critical"
-    
-    # Check model manager status
-    models_status = {"healthy": False, "error": "Not initialized"}
-    if model_manager:
-        try:
-            models_status = await model_manager.get_health_report()
-            if models_status.get("overall_status") != "healthy":
-                if models_status.get("overall_status") == "critical":
-                    overall_status = "critical"
-                elif overall_status == "healthy":
-                    overall_status = "degraded"
-                
-                # Add model-specific warnings
-                for recommendation in models_status.get("recommendations", []):
-                    warnings.append(recommendation)
-                    
-        except Exception as e:
-            errors.append(f"Model manager status check failed: {str(e)}")
-            overall_status = "critical"
-    else:
-        errors.append("Model manager not initialized")
-        overall_status = "critical"
-    
-    # Check system resources
-    system_resources = {}
-    try:
-        system_resources = {
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "memory_percent": psutil.virtual_memory().percent,
-            "memory_available_gb": round(psutil.virtual_memory().available / (1024**3), 2),
-            "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
-            "disk_usage_percent": psutil.disk_usage('/').percent,
-            "disk_free_gb": round(psutil.disk_usage('/').free / (1024**3), 2),
-        }
-        
-        # Add warnings for resource constraints
-        if system_resources["memory_percent"] > 90:
-            warnings.append("High memory usage detected")
-            if overall_status == "healthy":
-                overall_status = "degraded"
-        
-        if system_resources["disk_usage_percent"] > 90:
-            warnings.append("Low disk space available")
-            if overall_status == "healthy":
-                overall_status = "degraded"
-        
-        if system_resources["cpu_percent"] > 95:
-            warnings.append("High CPU usage detected")
-            
-    except Exception as e:
-        warnings.append(f"Could not retrieve system resources: {str(e)}")
-    
-    return DetailedHealthResponse(
-        status=overall_status,
-        timestamp=datetime.utcnow().isoformat(),
-        uptime_seconds=uptime,
-        ollama_status=ollama_status,
-        models_status=models_status,
-        system_resources=system_resources,
-        errors=errors,
-        warnings=warnings
-    )
-
-@router.get("/models", response_model=ModelListResponse)
-async def list_models(ollama_client: OllamaClient = Depends(get_ollama_client)):
-    """List all available models"""
-    
-    if not ollama_client:
-        raise HTTPException(status_code=503, detail="Ollama client not available")
+    start_time = time.time()
     
     try:
-        models = await ollama_client.list_models()
+        # Check Ollama service
+        ollama_healthy = await ollama_client.health_check()
         
-        return ModelListResponse(
-            models=models,
-            total_count=len(models),
-            timestamp=datetime.utcnow().isoformat()
+        # Get model information
+        available_models = await model_manager.get_available_models()
+        model_count = len(available_models)
+        
+        # Check service connectivity
+        service_connectivity = await service_comm.validate_service_connectivity()
+        
+        # Get system metrics
+        system_metrics = get_system_metrics()
+        
+        # Overall health determination
+        overall_healthy = (
+            ollama_healthy and 
+            model_count > 0 and 
+            service_connectivity and
+            system_metrics["memory_usage"] < 90 and
+            system_metrics["disk_usage"] < 90
         )
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
-
-@router.post("/models/pull/{model_name}", response_model=ModelPullResponse)
-async def pull_model(
-    model_name: str,
-    ollama_client: OllamaClient = Depends(get_ollama_client)
-):
-    """Download a specific model"""
-    
-    if not ollama_client:
-        raise HTTPException(status_code=503, detail="Ollama client not available")
-    
-    try:
-        # Check if Ollama is healthy first
-        if not await ollama_client.health_check():
-            raise HTTPException(status_code=503, detail="Ollama service is not available")
-        
-        success = await ollama_client.pull_model(model_name)
-        
-        if success:
-            return ModelPullResponse(
-                success=True,
-                message=f"Model {model_name} downloaded successfully",
-                model_name=model_name,
-                timestamp=datetime.utcnow().isoformat()
-            )
-        else:
-            return ModelPullResponse(
-                success=False,
-                message=f"Failed to download model {model_name}",
-                model_name=model_name,
-                timestamp=datetime.utcnow().isoformat()
-            )
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model download failed: {str(e)}")
-
-@router.delete("/models/{model_name}")
-async def delete_model(
-    model_name: str,
-    ollama_client: OllamaClient = Depends(get_ollama_client)
-):
-    """Delete a specific model"""
-    
-    if not ollama_client:
-        raise HTTPException(status_code=503, detail="Ollama client not available")
-    
-    try:
-        success = await ollama_client.delete_model(model_name)
-        
-        if success:
-            return {
-                "success": True,
-                "message": f"Model {model_name} deleted successfully",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail=f"Failed to delete model {model_name}")
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model deletion failed: {str(e)}")
-
-@router.get("/models/{model_name}/info")
-async def get_model_info(
-    model_name: str,
-    ollama_client: OllamaClient = Depends(get_ollama_client)
-):
-    """Get information about a specific model"""
-    
-    if not ollama_client:
-        raise HTTPException(status_code=503, detail="Ollama client not available")
-    
-    try:
-        info = await ollama_client.get_model_info(model_name)
-        
-        if info:
-            return {
-                "model_name": model_name,
-                "info": info,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=404, detail=f"Model {model_name} not found")
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get model info: {str(e)}")
-
-@router.get("/system")
-async def system_info():
-    """Get system information and resource usage"""
-    
-    try:
-        # Get system information
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        system_info = {
-            "cpu": {
-                "cores": psutil.cpu_count(),
-                "logical_cores": psutil.cpu_count(logical=True),
-                "current_usage_percent": psutil.cpu_percent(interval=1),
-            },
-            "memory": {
-                "total_gb": round(memory.total / (1024**3), 2),
-                "available_gb": round(memory.available / (1024**3), 2),
-                "used_gb": round(memory.used / (1024**3), 2),
-                "usage_percent": memory.percent,
-            },
-            "disk": {
-                "total_gb": round(disk.total / (1024**3), 2),
-                "free_gb": round(disk.free / (1024**3), 2),
-                "used_gb": round(disk.used / (1024**3), 2),
-                "usage_percent": round((disk.used / disk.total) * 100, 1),
-            },
-            "python": {
-                "version": os.sys.version,
-                "executable": os.sys.executable,
-            },
-            "environment": {
-                "platform": os.name,
-                "environment_vars": {
-                    "OLLAMA_BASE_URL": os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
-                    "PORT": os.getenv("PORT", "3002"),
-                    "ENVIRONMENT": os.getenv("ENVIRONMENT", "development"),
+        health_data = {
+            "status": "healthy" if overall_healthy else "unhealthy",
+            "service": "ai-engine",
+            "version": "2.0.0",
+            "timestamp": datetime.utcnow().isoformat(),
+            "response_time": f"{(time.time() - start_time) * 1000:.2f}ms",
+            "checks": {
+                "ollama_service": {
+                    "status": "healthy" if ollama_healthy else "unhealthy",
+                    "url": settings.OLLAMA_BASE_URL
+                },
+                "models": {
+                    "status": "healthy" if model_count > 0 else "unhealthy",
+                    "available_count": model_count,
+                    "preferred_models": model_manager.preferred_models
+                },
+                "service_connectivity": {
+                    "status": "healthy" if service_connectivity else "degraded",
+                    "backend_url": settings.BACKEND_URL,
+                    "hugo_generator_url": settings.HUGO_GENERATOR_URL
+                },
+                "system": {
+                    "status": "healthy" if system_metrics["memory_usage"] < 90 else "warning",
+                    **system_metrics
                 }
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "configuration": {
+                "environment": settings.ENVIRONMENT,
+                "port": settings.PORT,
+                "default_model": settings.DEFAULT_MODEL,
+                "max_concurrent_workflows": settings.MAX_CONCURRENT_WORKFLOWS
+            }
         }
         
-        return system_info
-        
+        if overall_healthy:
+            return health_data
+        else:
+            return health_data  # Still return 200 but with unhealthy status
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get system info: {str(e)}")
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "error",
+            "service": "ai-engine",
+            "version": "2.0.0",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
 
-@router.post("/initialize")
-async def initialize_models(
+@router.get("/health/detailed")
+async def detailed_health_check(
+    ollama_client: OllamaClient = Depends(get_ollama_client),
+    model_manager: ModelManager = Depends(get_model_manager),
+    service_comm: ServiceCommunication = Depends(get_service_communication)
+):
+    """
+    Detailed health check with comprehensive diagnostics
+    """
+    
+    # Get basic health status
+    basic_health = await health_check(ollama_client, model_manager, service_comm)
+    
+    # Add detailed information
+    detailed_info = {
+        "ollama_statistics": ollama_client.get_statistics(),
+        "model_statistics": model_manager.get_model_statistics(),
+        "service_health": await service_comm.check_all_services_health(),
+        "performance_metrics": {
+            "requests_processed": getattr(ollama_client, '_request_count', 0),
+            "errors_encountered": getattr(ollama_client, '_error_count', 0),
+            "average_response_time": calculate_average_response_time(model_manager)
+        }
+    }
+    
+    # Merge with basic health data
+    return {**basic_health, "detailed": detailed_info}
+
+@router.get("/health/models")
+async def models_health_check(
     model_manager: ModelManager = Depends(get_model_manager)
 ):
-    """Initialize/reinitialize models"""
-    
-    if not model_manager:
-        raise HTTPException(status_code=503, detail="Model manager not available")
+    """
+    Specific health check for model availability and status
+    """
     
     try:
-        await model_manager.initialize_models()
+        available_models = await model_manager.get_available_models()
+        model_stats = model_manager.get_model_statistics()
         
         return {
-            "success": True,
-            "message": "Model initialization completed",
-            "timestamp": datetime.utcnow().isoformat()
+            "status": "healthy" if available_models else "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "models": {
+                "total": model_stats["total_models"],
+                "available": model_stats["available_models"],
+                "preferred": model_stats["preferred_models"],
+                "last_refresh": model_stats["last_refresh"]
+            },
+            "model_list": [
+                {
+                    "name": model.name,
+                    "family": model.family,
+                    "size": model.size,
+                    "available": model.available,
+                    "capabilities": model.capabilities
+                }
+                for model in available_models
+            ]
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model initialization failed: {str(e)}")
+        logger.error(f"Model health check failed: {e}")
+        return {
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
 
-@router.get("/test-connection")
-async def test_ollama_connection(
-    ollama_client: OllamaClient = Depends(get_ollama_client)
+@router.get("/health/services")
+async def services_health_check(
+    service_comm: ServiceCommunication = Depends(get_service_communication)
 ):
-    """Test Ollama connection with detailed diagnostics"""
-    
-    if not ollama_client:
-        return {
-            "error": "Ollama client not initialized",
-            "suggestions": [
-                "Check if AI engine started properly",
-                "Verify OLLAMA_HOST environment variable"
-            ]
-        }
+    """
+    Health check for external service connectivity
+    """
     
     try:
-        # Run connection test
-        connection_test = await ollama_client.test_connection()
+        service_health = await service_comm.check_all_services_health()
         
-        # Add environment info
-        connection_test["environment"] = {
-            "OLLAMA_HOST": os.getenv("OLLAMA_HOST", "not set"),
-            "OLLAMA_BASE_URL": os.getenv("OLLAMA_BASE_URL", "not set"),
-            "configured_url": ollama_client.base_url
+        return {
+            "status": service_health["overall_status"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "services": service_health["services"],
+            "summary": {
+                "overall_status": service_health["overall_status"],
+                "healthy_services": service_health["healthy_services"]
+            }
         }
-        
-        # Add suggestions based on results
-        if not connection_test["connected"]:
-            connection_test["suggestions"] = [
-                "Check if Ollama is running: 'ollama serve'",
-                "Verify the URL is correct",
-                "Check firewall settings",
-                "Ensure Ollama is listening on the correct port"
-            ]
-        
-        return connection_test
         
     except Exception as e:
+        logger.error(f"Service health check failed: {e}")
         return {
-            "error": str(e),
-            "base_url": ollama_client.base_url,
-            "suggestions": [
-                "Check if Ollama service is running",
-                "Verify network connectivity",
-                "Check environment variables"
-            ]
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
         }
+
+@router.get("/health/system")
+async def system_health_check():
+    """
+    System resource health check
+    """
+    
+    try:
+        metrics = get_system_metrics()
+        
+        status = "healthy"
+        if metrics["memory_usage"] > 90 or metrics["disk_usage"] > 90:
+            status = "critical"
+        elif metrics["memory_usage"] > 80 or metrics["disk_usage"] > 80:
+            status = "warning"
+        
+        return {
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat(),
+            "metrics": metrics,
+            "recommendations": get_health_recommendations(metrics)
+        }
+        
+    except Exception as e:
+        logger.error(f"System health check failed: {e}")
+        return {
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
+
+@router.post("/health/refresh")
+async def refresh_health_status(
+    model_manager: ModelManager = Depends(get_model_manager)
+):
+    """
+    Force refresh of health status and model list
+    """
+    
+    try:
+        # Refresh model list
+        await model_manager.refresh_models(force=True)
+        
+        # Validate preferred models
+        await model_manager.validate_preferred_models()
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "message": "Health status refreshed successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Health refresh failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_system_metrics() -> Dict[str, Any]:
+    """Get current system metrics"""
+    
+    try:
+        # Memory usage
+        memory = psutil.virtual_memory()
+        memory_usage = memory.percent
+        
+        # Disk usage
+        disk = psutil.disk_usage('/')
+        disk_usage = (disk.used / disk.total) * 100
+        
+        # CPU usage
+        cpu_usage = psutil.cpu_percent(interval=1)
+        
+        # Process info
+        process = psutil.Process()
+        process_memory = process.memory_info().rss / 1024 / 1024  # MB
+        
+        return {
+            "memory_usage": memory_usage,
+            "memory_available": memory.available / 1024 / 1024 / 1024,  # GB
+            "disk_usage": disk_usage,
+            "disk_free": disk.free / 1024 / 1024 / 1024,  # GB
+            "cpu_usage": cpu_usage,
+            "process_memory": process_memory,
+            "cpu_count": psutil.cpu_count()
+        }
+        
+    except Exception as e:
+        logger.warning(f"Failed to get system metrics: {e}")
+        return {
+            "memory_usage": 0,
+            "disk_usage": 0,
+            "cpu_usage": 0,
+            "error": "Unable to retrieve system metrics"
+        }
+
+def calculate_average_response_time(model_manager: ModelManager) -> float:
+    """Calculate average response time across all models"""
+    
+    total_time = 0
+    total_count = 0
+    
+    for model in model_manager.models.values():
+        if model.use_count > 0 and model.avg_response_time > 0:
+            total_time += model.avg_response_time * model.use_count
+            total_count += model.use_count
+    
+    return total_time / total_count if total_count > 0 else 0
+
+def get_health_recommendations(metrics: Dict[str, Any]) -> List[str]:
+    """Get health recommendations based on system metrics"""
+    
+    recommendations = []
+    
+    if metrics.get("memory_usage", 0) > 90:
+        recommendations.append("Critical: Memory usage is very high. Consider restarting the service or increasing memory allocation.")
+    elif metrics.get("memory_usage", 0) > 80:
+        recommendations.append("Warning: Memory usage is high. Monitor closely and consider scaling if needed.")
+    
+    if metrics.get("disk_usage", 0) > 90:
+        recommendations.append("Critical: Disk usage is very high. Clean up temporary files or increase disk space.")
+    elif metrics.get("disk_usage", 0) > 80:
+        recommendations.append("Warning: Disk usage is high. Monitor storage and clean up old files.")
+    
+    if metrics.get("cpu_usage", 0) > 90:
+        recommendations.append("High CPU usage detected. Consider reducing concurrent operations.")
+    
+    if not recommendations:
+        recommendations.append("System is operating within normal parameters.")
+    
+    return recommendations

@@ -1,216 +1,472 @@
-# File: ai-engine/src/api/content.py
-# Add this new router to your existing AI engine
-
 """
 Content Generation API Endpoints
-FastAPI endpoints for website content generation using Ollama models
+Handles website content generation requests with proper communication patterns
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional, List
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
+from pydantic import BaseModel, Field, validator
+from typing import Dict, Any, Optional, List, Union
 import uuid
 import asyncio
+import time
 from datetime import datetime
-import json
+from enum import Enum
+import structlog
 
-from ..workflows.website_generation import WebsiteGenerationWorkflow
-from ..workflows.base import WorkflowState, WorkflowStatus
 from ..services.ollama_client import OllamaClient
 from ..services.model_manager import ModelManager
+from ..services.service_communication import ServiceCommunication
+from ..config import settings, MODEL_PRESETS
 
-router = APIRouter(prefix="/content", tags=["content"])
+logger = structlog.get_logger()
+router = APIRouter()
 
-# Request/Response Models for Website Content Generation
+# Request/Response Models
+class ContentTone(str, Enum):
+    PROFESSIONAL = "professional"
+    CASUAL = "casual"
+    FRIENDLY = "friendly"
+    FORMAL = "formal"
+    CREATIVE = "creative"
+    AUTHORITATIVE = "authoritative"
+    CONVERSATIONAL = "conversational"
+    TECHNICAL = "technical"
+
+class ContentLength(str, Enum):
+    SHORT = "short"
+    MEDIUM = "medium"
+    LONG = "long"
+    DETAILED = "detailed"
+
+class GenerationStatus(str, Enum):
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 class ContentGenerationRequest(BaseModel):
-    business_name: str = Field(..., description="Business name")
-    business_type: str = Field(..., description="Type of business")
-    industry: Optional[str] = Field(None, description="Industry sector")
-    description: Optional[str] = Field(None, description="Business description")
-    target_audience: Optional[str] = Field(None, description="Target audience")
-    pages: List[str] = Field(default=["home", "about", "services", "contact"], description="Pages to generate")
-    tone: str = Field(default="professional", description="Content tone")
-    length: str = Field(default="medium", description="Content length")
+    """Request model for content generation"""
+    business_name: str = Field(..., description="Business name", min_length=1, max_length=100)
+    business_type: str = Field(..., description="Type of business", min_length=1, max_length=50)
+    industry: Optional[str] = Field(None, description="Industry sector", max_length=50)
+    description: Optional[str] = Field(None, description="Business description", max_length=500)
+    target_audience: Optional[str] = Field(None, description="Target audience", max_length=200)
+    pages: List[str] = Field(
+        default=["home", "about", "services", "contact"], 
+        description="Pages to generate"
+    )
+    tone: ContentTone = Field(default=ContentTone.PROFESSIONAL, description="Content tone")
+    length: ContentLength = Field(default=ContentLength.MEDIUM, description="Content length")
     include_seo: bool = Field(default=True, description="Include SEO optimization")
     model: Optional[str] = Field(None, description="Specific model to use")
+    project_id: Optional[str] = Field(None, description="Associated project ID")
+    user_id: Optional[str] = Field(None, description="User ID for tracking")
+    
+    @validator('pages')
+    def validate_pages(cls, v):
+        allowed_pages = ["home", "about", "services", "contact", "portfolio", "blog", "testimonials"]
+        for page in v:
+            if page not in allowed_pages:
+                raise ValueError(f"Invalid page type: {page}")
+        return v
 
 class PageContent(BaseModel):
-    title: str
-    content: str
-    meta_description: str
-    keywords: List[str] = []
-    seo_title: Optional[str] = None
-    word_count: Optional[int] = None
+    """Content for a single page"""
+    title: str = Field(..., description="Page title")
+    content: str = Field(..., description="Page content in Markdown")
+    meta_description: str = Field(..., description="SEO meta description")
+    keywords: List[str] = Field(default=[], description="SEO keywords")
+    seo_title: Optional[str] = Field(None, description="SEO optimized title")
+    slug: str = Field(..., description="URL slug")
 
 class ContentGenerationResponse(BaseModel):
-    pages: Dict[str, PageContent]
-    seo_data: Dict[str, Any]
-    generation_time: float
-    model_used: str
-    word_count_total: int
-    generation_id: str
+    """Response model for content generation"""
+    generation_id: str = Field(..., description="Unique generation ID")
+    status: GenerationStatus = Field(..., description="Generation status")
+    pages: Dict[str, PageContent] = Field(default={}, description="Generated page content")
+    metadata: Dict[str, Any] = Field(default={}, description="Generation metadata")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    error: Optional[str] = Field(None, description="Error message if failed")
 
-# Content generation store (use Redis in production)
-content_generation_store: Dict[str, Dict[str, Any]] = {}
+class GenerationStatusResponse(BaseModel):
+    """Response model for generation status"""
+    generation_id: str = Field(..., description="Generation ID")
+    status: GenerationStatus = Field(..., description="Current status")
+    progress: float = Field(default=0.0, description="Progress percentage (0-100)")
+    current_step: Optional[str] = Field(None, description="Current processing step")
+    estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
+    pages_completed: int = Field(default=0, description="Number of pages completed")
+    total_pages: int = Field(default=0, description="Total number of pages")
 
-# Dependency to get Ollama client
+# In-memory storage for generation status (in production, use Redis or database)
+generation_store: Dict[str, Dict[str, Any]] = {}
+
+# Dependency injection
 async def get_ollama_client() -> OllamaClient:
-    """Get Ollama client from app state"""
-    from fastapi import Request
-    request = Request.scope
-    return request.app.state.ollama_client
+    from main import app
+    return app.state.ollama_client
 
 async def get_model_manager() -> ModelManager:
-    """Get model manager from app state"""
-    from fastapi import Request
-    request = Request.scope
-    return request.app.state.model_manager
+    from main import app
+    return app.state.model_manager
 
-@router.post("/generate-content", response_model=ContentGenerationResponse)
-async def generate_website_content(
+async def get_service_communication() -> ServiceCommunication:
+    from main import app
+    return app.state.service_communication
+
+@router.post("/content/generate-content", response_model=ContentGenerationResponse)
+async def generate_content(
     request: ContentGenerationRequest,
     background_tasks: BackgroundTasks,
-    ollama_client: OllamaClient = Depends(get_ollama_client),
-    model_manager: ModelManager = Depends(get_model_manager)
+    http_request: Request,
+    model_manager: ModelManager = Depends(get_model_manager),
+    service_comm: ServiceCommunication = Depends(get_service_communication)
 ):
     """
-    Generate complete website content using Ollama models
+    Generate website content based on business information
     """
+    
+    # Generate unique ID for this generation
     generation_id = str(uuid.uuid4())
-    start_time = datetime.utcnow()
+    request_id = getattr(http_request.state, 'request_id', 'unknown')
+    
+    logger.info(
+        "Content generation requested",
+        generation_id=generation_id,
+        request_id=request_id,
+        business_name=request.business_name,
+        pages=request.pages,
+        tone=request.tone
+    )
+    
+    # Initialize generation record
+    generation_record = {
+        "generation_id": generation_id,
+        "status": GenerationStatus.QUEUED,
+        "request": request.dict(),
+        "pages": {},
+        "metadata": {
+            "request_id": request_id,
+            "model_used": None,
+            "generation_time": None,
+            "created_at": datetime.utcnow(),
+            "progress": 0.0
+        },
+        "created_at": datetime.utcnow(),
+        "completed_at": None,
+        "error": None
+    }
+    
+    generation_store[generation_id] = generation_record
+    
+    # Notify backend if project_id is provided
+    if request.project_id and service_comm:
+        try:
+            await service_comm.notify_backend_generation_started(
+                project_id=request.project_id,
+                generation_id=generation_id,
+                user_id=request.user_id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify backend: {e}")
+    
+    # Start background generation
+    background_tasks.add_task(
+        process_content_generation,
+        generation_id,
+        request,
+        model_manager,
+        service_comm
+    )
+    
+    return ContentGenerationResponse(
+        generation_id=generation_id,
+        status=GenerationStatus.QUEUED,
+        pages={},
+        metadata=generation_record["metadata"],
+        created_at=generation_record["created_at"]
+    )
+
+@router.get("/content/status/{generation_id}", response_model=GenerationStatusResponse)
+async def get_generation_status(generation_id: str):
+    """
+    Get the status of a content generation request
+    """
+    
+    if generation_id not in generation_store:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    
+    record = generation_store[generation_id]
+    
+    return GenerationStatusResponse(
+        generation_id=generation_id,
+        status=record["status"],
+        progress=record["metadata"].get("progress", 0.0),
+        current_step=record["metadata"].get("current_step"),
+        estimated_completion=record["metadata"].get("estimated_completion"),
+        pages_completed=len(record["pages"]),
+        total_pages=len(record["request"]["pages"])
+    )
+
+@router.get("/content/result/{generation_id}", response_model=ContentGenerationResponse)
+async def get_generation_result(generation_id: str):
+    """
+    Get the result of a completed content generation
+    """
+    
+    if generation_id not in generation_store:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    
+    record = generation_store[generation_id]
+    
+    return ContentGenerationResponse(
+        generation_id=generation_id,
+        status=record["status"],
+        pages=record["pages"],
+        metadata=record["metadata"],
+        created_at=record["created_at"],
+        completed_at=record["completed_at"],
+        error=record["error"]
+    )
+
+@router.delete("/content/{generation_id}")
+async def delete_generation(generation_id: str):
+    """
+    Delete a generation record
+    """
+    
+    if generation_id not in generation_store:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    
+    del generation_store[generation_id]
+    
+    return {
+        "success": True,
+        "message": f"Generation {generation_id} deleted successfully"
+    }
+
+@router.get("/content/generations")
+async def list_generations(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[GenerationStatus] = None
+):
+    """
+    List content generations with optional filtering
+    """
+    
+    generations = list(generation_store.values())
+    
+    # Filter by status if provided
+    if status:
+        generations = [g for g in generations if g["status"] == status]
+    
+    # Sort by creation time (newest first)
+    generations.sort(key=lambda x: x["created_at"], reverse=True)
+    
+    # Apply pagination
+    total = len(generations)
+    generations = generations[offset:offset + limit]
+    
+    return {
+        "generations": [
+            {
+                "generation_id": g["generation_id"],
+                "status": g["status"],
+                "business_name": g["request"]["business_name"],
+                "pages": len(g["pages"]),
+                "created_at": g["created_at"],
+                "completed_at": g["completed_at"]
+            }
+            for g in generations
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+async def process_content_generation(
+    generation_id: str,
+    request: ContentGenerationRequest,
+    model_manager: ModelManager,
+    service_comm: ServiceCommunication
+):
+    """
+    Background task to process content generation
+    """
+    
+    start_time = time.time()
     
     try:
-        # Determine which model to use
-        model_name = request.model or "qwen2.5:7b"  # Default model
+        # Update status to processing
+        generation_store[generation_id]["status"] = GenerationStatus.PROCESSING
+        generation_store[generation_id]["metadata"]["current_step"] = "Initializing"
+        generation_store[generation_id]["metadata"]["progress"] = 5.0
+        
+        logger.info(f"Starting content generation for {generation_id}")
+        
+        # Get appropriate model for content generation
+        model_name = request.model or await model_manager.get_model_for_task("content_generation")
         
         # Ensure model is available
-        available_models = await ollama_client.list_models()
-        if model_name not in available_models:
-            # Fallback to first available model
-            model_name = available_models[0] if available_models else "llama3.1:8b"
+        model_available = await model_manager.ensure_model_available(model_name)
+        if not model_available:
+            raise Exception(f"Model {model_name} is not available")
         
-        print(f"🤖 Using model: {model_name} for content generation")
-        
-        # Store generation status
-        content_generation_store[generation_id] = {
-            "status": "generating",
-            "progress": 0,
-            "started_at": start_time.isoformat(),
-            "model": model_name
-        }
-        
-        pages_content = {}
-        total_word_count = 0
+        generation_store[generation_id]["metadata"]["model_used"] = model_name
+        generation_store[generation_id]["metadata"]["current_step"] = "Generating content"
+        generation_store[generation_id]["metadata"]["progress"] = 10.0
         
         # Generate content for each page
+        pages_content = {}
+        total_pages = len(request.pages)
+        
         for i, page_name in enumerate(request.pages):
-            progress = (i + 1) / len(request.pages) * 100
-            content_generation_store[generation_id]["progress"] = progress
-            content_generation_store[generation_id]["current_page"] = page_name
+            logger.info(f"Generating content for page: {page_name}")
             
+            # Update progress
+            progress = 10.0 + (i / total_pages) * 80.0
+            generation_store[generation_id]["metadata"]["progress"] = progress
+            generation_store[generation_id]["metadata"]["current_step"] = f"Generating {page_name} page"
+            
+            # Generate page content
             page_content = await generate_page_content(
-                ollama_client=ollama_client,
                 page_name=page_name,
-                business_name=request.business_name,
-                business_type=request.business_type,
-                industry=request.industry,
-                description=request.description,
-                target_audience=request.target_audience,
-                tone=request.tone,
-                length=request.length,
-                model=model_name
+                request=request,
+                model_name=model_name,
+                model_manager=model_manager
             )
             
             pages_content[page_name] = page_content
-            total_word_count += page_content.word_count or 0
+            generation_store[generation_id]["pages"][page_name] = page_content
         
-        # Generate SEO data
-        seo_data = await generate_seo_data(
-            ollama_client=ollama_client,
-            request=request,
-            model=model_name
+        # Mark as completed
+        generation_time = time.time() - start_time
+        generation_store[generation_id]["status"] = GenerationStatus.COMPLETED
+        generation_store[generation_id]["completed_at"] = datetime.utcnow()
+        generation_store[generation_id]["metadata"]["progress"] = 100.0
+        generation_store[generation_id]["metadata"]["current_step"] = "Completed"
+        generation_store[generation_id]["metadata"]["generation_time"] = generation_time
+        
+        logger.info(
+            f"Content generation completed for {generation_id}",
+            generation_time=f"{generation_time:.2f}s",
+            pages_generated=len(pages_content)
         )
         
-        # Calculate generation time
-        generation_time = (datetime.utcnow() - start_time).total_seconds()
+        # Record model usage
+        model_manager.record_model_usage(model_name, generation_time, True)
         
-        # Update final status
-        content_generation_store[generation_id]["status"] = "completed"
-        content_generation_store[generation_id]["progress"] = 100
-        content_generation_store[generation_id]["completed_at"] = datetime.utcnow().isoformat()
-        
-        print(f"✅ Content generation completed in {generation_time:.2f}s")
-        
-        return ContentGenerationResponse(
-            pages=pages_content,
-            seo_data=seo_data,
-            generation_time=generation_time,
-            model_used=model_name,
-            word_count_total=total_word_count,
-            generation_id=generation_id
-        )
-        
-    except Exception as e:
-        print(f"❌ Content generation failed: {str(e)}")
-        content_generation_store[generation_id]["status"] = "failed"
-        content_generation_store[generation_id]["error"] = str(e)
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
-
-@router.get("/generation-status/{generation_id}")
-async def get_content_generation_status(generation_id: str):
-    """Get status of content generation"""
-    if generation_id not in content_generation_store:
-        raise HTTPException(status_code=404, detail="Generation not found")
+        # Notify backend if project_id is provided
+        if request.project_id and service_comm:
+            try:
+                await service_comm.notify_backend_generation_completed(
+                    project_id=request.project_id,
+                    generation_id=generation_id,
+                    content=pages_content,
+                    user_id=request.user_id
+                )
+            except Exception as e:
+                logger.warning(f"Failed to notify backend of completion: {e}")
     
-    return content_generation_store[generation_id]
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Content generation failed for {generation_id}: {error_msg}")
+        
+        # Mark as failed
+        generation_store[generation_id]["status"] = GenerationStatus.FAILED
+        generation_store[generation_id]["error"] = error_msg
+        generation_store[generation_id]["completed_at"] = datetime.utcnow()
+        generation_store[generation_id]["metadata"]["current_step"] = "Failed"
+        
+        # Record model usage failure
+        if "model_used" in generation_store[generation_id]["metadata"]:
+            model_name = generation_store[generation_id]["metadata"]["model_used"]
+            model_manager.record_model_usage(model_name, time.time() - start_time, False)
+        
+        # Notify backend of failure
+        if request.project_id and service_comm:
+            try:
+                await service_comm.notify_backend_generation_failed(
+                    project_id=request.project_id,
+                    generation_id=generation_id,
+                    error=error_msg,
+                    user_id=request.user_id
+                )
+            except Exception as notify_error:
+                logger.warning(f"Failed to notify backend of failure: {notify_error}")
 
 async def generate_page_content(
-    ollama_client: OllamaClient,
     page_name: str,
-    business_name: str,
-    business_type: str,
-    industry: Optional[str],
-    description: Optional[str],
-    target_audience: Optional[str],
-    tone: str,
-    length: str,
-    model: str
+    request: ContentGenerationRequest,
+    model_name: str,
+    model_manager: ModelManager
 ) -> PageContent:
-    """Generate content for a specific page using Ollama"""
+    """
+    Generate content for a specific page
+    """
     
-    # Page-specific prompts optimized for Ollama
-    page_prompts = {
-        "home": f"""Create a compelling homepage for {business_name}, a {business_type} business.
+    # Get Ollama client
+    from main import app
+    ollama_client = app.state.ollama_client
+    
+    # Create page-specific prompt
+    prompt = create_page_prompt(page_name, request)
+    system_prompt = create_system_prompt(request.tone, request.length, request.include_seo)
+    
+    # Generate content
+    preset = MODEL_PRESETS.get("content_generation", {})
+    response = await ollama_client.generate(
+        model=model_name,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        temperature=preset.get("temperature", 0.7),
+        max_tokens=preset.get("max_tokens", 2000),
+        top_p=preset.get("top_p", 0.9)
+    )
+    
+    content = response.get("response", "")
+    
+    # Parse and structure the content
+    return parse_generated_content(page_name, content, request)
 
-Business Details:
-- Industry: {industry or 'general business'}
-- Description: {description or 'Professional services company'}
-- Target Audience: {target_audience or 'general public'}
+def create_page_prompt(page_name: str, request: ContentGenerationRequest) -> str:
+    """Create a page-specific prompt for content generation"""
+    
+    business_name = request.business_name
+    business_type = request.business_type
+    industry = request.industry or "general business"
+    description = request.description or f"Professional {business_type} business"
+    target_audience = request.target_audience or "businesses and individuals"
+    tone = request.tone.value
+    length = request.length.value
+    
+    prompts = {
+        "home": f"""Create a compelling homepage for {business_name}, a {business_type} business in the {industry} industry.
 
-Content Requirements:
-- Write in {tone} tone
-- Content length: {length}
-- Include a hero section with compelling headline
-- Add business overview and key value propositions
-- Include 3-4 key services or products
-- Add a strong call-to-action
-- Format in Markdown
+Business Description: {description}
+Target Audience: {target_audience}
+Tone: {tone}
+Length: {length}
 
-Structure:
-# [Compelling Headline]
-## About {business_name}
-## Our Services
-## Why Choose Us
-## Get Started
+Include:
+1. Engaging headline that captures what the business does
+2. Brief overview of services/products
+3. Value proposition and unique selling points
+4. Call-to-action sections
+5. Why choose us section
+6. Contact information placeholder
 
-Make it engaging and conversion-focused.""",
+Format as clean Markdown with appropriate headers.""",
 
-        "about": f"""Write an engaging About page for {business_name}.
+        "about": f"""Write a comprehensive About page for {business_name}.
 
 Business Details:
 - Type: {business_type}
-- Industry: {industry or 'general business'}
-- Description: {description or 'Professional business'}
+- Industry: {industry}
+- Description: {description}
+- Target Audience: {target_audience}
 
 Content Requirements:
 - Tone: {tone}
@@ -235,8 +491,8 @@ Make it personal and trustworthy.""",
 
 Business Details:
 - Type: {business_type}
-- Industry: {industry or 'general business'}
-- Target Audience: {target_audience or 'businesses and individuals'}
+- Industry: {industry}
+- Target Audience: {target_audience}
 
 Content Requirements:
 - Tone: {tone}
@@ -261,7 +517,7 @@ Focus on benefits over features.""",
 
 Business Details:
 - Type: {business_type}
-- Industry: {industry or 'general business'}
+- Industry: {industry}
 
 Content Requirements:
 - Tone: {tone}
@@ -285,229 +541,71 @@ Structure:
 Make it welcoming and helpful."""
     }
     
-    # Get the appropriate prompt
-    prompt = page_prompts.get(page_name, f"Create a {page_name} page for {business_name}, a {business_type} business. Use {tone} tone and {length} length.")
+    return prompts.get(page_name, f"Create a {page_name} page for {business_name}, a {business_type} business. Use {tone} tone and {length} length.")
+
+def create_system_prompt(tone: ContentTone, length: ContentLength, include_seo: bool) -> str:
+    """Create system prompt based on requirements"""
     
-    try:
-        # Generate content using Ollama
-        response = await ollama_client.generate(
-            model=model,
-            prompt=prompt,
-            system_prompt="You are a professional web content writer. Create engaging, SEO-optimized content that converts visitors into customers. Always format content in clean Markdown.",
-            max_tokens=1500 if length == "long" else 1000 if length == "medium" else 600,
-            temperature=0.7
-        )
-        
-        content = response.get("response", "").strip()
-        
-        # Extract title from content (first # heading)
-        lines = content.split('\n')
-        title = f"{page_name.title()} - {business_name}"
-        for line in lines:
-            if line.startswith('# '):
-                title = line[2:].strip()
-                break
-        
-        # Count words
-        word_count = len(content.split())
-        
-        # Generate meta description using a separate call
-        meta_description = await generate_meta_description(
-            ollama_client=ollama_client,
-            page_name=page_name,
-            business_name=business_name,
-            business_type=business_type,
-            content_preview=content[:300],
-            model=model
-        )
-        
-        # Generate keywords
-        keywords = await generate_keywords(
-            ollama_client=ollama_client,
-            business_name=business_name,
-            business_type=business_type,
-            industry=industry,
-            page_name=page_name,
-            model=model
-        )
-        
-        return PageContent(
-            title=title,
-            content=content,
-            meta_description=meta_description,
-            keywords=keywords,
-            seo_title=f"{title} | {business_name}",
-            word_count=word_count
-        )
-        
-    except Exception as e:
-        print(f"⚠️ Error generating {page_name} content: {e}")
-        # Fallback content
-        return PageContent(
-            title=f"{page_name.title()} - {business_name}",
-            content=f"# {page_name.title()}\n\nWelcome to {business_name}. We provide excellent {business_type} services.\n\nContact us today to learn more about how we can help you achieve your goals.",
-            meta_description=f"{business_name} {page_name} page - Professional {business_type} services",
-            keywords=[business_name.lower(), page_name, business_type.lower()],
-            word_count=25
-        )
-
-async def generate_meta_description(
-    ollama_client: OllamaClient,
-    page_name: str,
-    business_name: str,
-    business_type: str,
-    content_preview: str,
-    model: str
-) -> str:
-    """Generate SEO meta description using Ollama"""
+    base_prompt = """You are a professional web content writer specializing in business websites. Create engaging, conversion-focused content that matches the specified tone and length requirements."""
     
-    prompt = f"""Create a compelling SEO meta description for the {page_name} page of {business_name}.
-
-Business: {business_name} ({business_type})
-Content Preview: {content_preview}
-
-Requirements:
-- Exactly 150-160 characters
-- Include business name
-- Include relevant keywords
-- Compelling and action-oriented
-- No quotation marks
-
-Just return the meta description, nothing else."""
-
-    try:
-        response = await ollama_client.generate(
-            model=model,
-            prompt=prompt,
-            system_prompt="You are an SEO expert. Create concise, compelling meta descriptions that drive clicks.",
-            max_tokens=50,
-            temperature=0.5
-        )
-        
-        meta_desc = response.get("response", "").strip().replace('"', '').replace("'", "")
-        
-        # Ensure it's within character limit
-        if len(meta_desc) > 160:
-            meta_desc = meta_desc[:157] + "..."
-        
-        return meta_desc
-        
-    except Exception as e:
-        print(f"⚠️ Error generating meta description: {e}")
-        return f"{business_name} - Professional {business_type} services. Contact us today for more information."
-
-async def generate_keywords(
-    ollama_client: OllamaClient,
-    business_name: str,
-    business_type: str,
-    industry: Optional[str],
-    page_name: str,
-    model: str
-) -> List[str]:
-    """Generate SEO keywords using Ollama"""
+    tone_instructions = {
+        ContentTone.PROFESSIONAL: "Use formal, business-appropriate language with industry expertise.",
+        ContentTone.CASUAL: "Write in a relaxed, approachable style that feels conversational.",
+        ContentTone.FRIENDLY: "Use warm, welcoming language that builds trust and connection.",
+        ContentTone.FORMAL: "Maintain traditional, authoritative communication style.",
+        ContentTone.CREATIVE: "Be expressive and artistic, showing personality and innovation.",
+        ContentTone.AUTHORITATIVE: "Write with confidence and expertise, establishing credibility.",
+        ContentTone.CONVERSATIONAL: "Write as if speaking directly to the reader in natural dialogue.",
+        ContentTone.TECHNICAL: "Use precise, industry-specific terminology and detailed explanations."
+    }
     
-    prompt = f"""Generate 8-10 SEO keywords for the {page_name} page of {business_name}.
-
-Business Details:
-- Name: {business_name}
-- Type: {business_type}
-- Industry: {industry or 'general'}
-- Page: {page_name}
-
-Return only the keywords as a comma-separated list, no explanations."""
-
-    try:
-        response = await ollama_client.generate(
-            model=model,
-            prompt=prompt,
-            system_prompt="You are an SEO expert. Generate relevant, high-impact keywords for better search rankings.",
-            max_tokens=100,
-            temperature=0.3
-        )
-        
-        keywords_text = response.get("response", "").strip()
-        keywords = [kw.strip().lower() for kw in keywords_text.split(',') if kw.strip()]
-        
-        # Add basic keywords if generation failed
-        if not keywords:
-            keywords = [
-                business_name.lower(),
-                business_type.lower(),
-                page_name.lower()
-            ]
-            if industry:
-                keywords.append(industry.lower())
-        
-        return keywords[:10]  # Limit to 10 keywords
-        
-    except Exception as e:
-        print(f"⚠️ Error generating keywords: {e}")
-        return [business_name.lower(), business_type.lower(), page_name.lower()]
-
-async def generate_seo_data(
-    ollama_client: OllamaClient,
-    request: ContentGenerationRequest,
-    model: str
-) -> Dict[str, Any]:
-    """Generate additional SEO data using Ollama"""
+    length_instructions = {
+        ContentLength.SHORT: "Keep content concise - 200-400 words per section.",
+        ContentLength.MEDIUM: "Write moderate length content - 400-800 words per section.",
+        ContentLength.LONG: "Create comprehensive content - 800-1200 words per section.",
+        ContentLength.DETAILED: "Write in-depth, thorough content - 1200+ words per section."
+    }
     
-    try:
-        prompt = f"""Generate SEO data for {request.business_name} website.
+    seo_instruction = "\nOptimize for SEO with natural keyword integration, meta descriptions, and search-friendly structure." if include_seo else ""
+    
+    return f"{base_prompt}\n\n{tone_instructions[tone]}\n\n{length_instructions[length]}{seo_instruction}\n\nAlways format content in clean Markdown with proper headers and structure."
 
-Business Details:
-- Name: {request.business_name}
-- Type: {request.business_type}
-- Industry: {request.industry or 'general'}
-- Description: {request.description or 'Professional services'}
-
-Generate:
-1. Site title (60 chars max)
-2. Site description (160 chars max)
-3. 5 main keywords
-4. Open Graph title
-5. Twitter card description
-
-Format as JSON with keys: site_title, site_description, main_keywords, og_title, twitter_description"""
-
-        response = await ollama_client.generate(
-            model=model,
-            prompt=prompt,
-            system_prompt="You are an SEO expert. Generate comprehensive SEO data in valid JSON format.",
-            max_tokens=300,
-            temperature=0.5
-        )
-        
-        seo_text = response.get("response", "").strip()
-        
-        # Try to parse JSON response
-        try:
-            seo_data = json.loads(seo_text)
-        except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
-            seo_data = {}
-        
-        # Ensure all required fields exist
-        fallback_seo = {
-            "site_title": request.business_name,
-            "site_description": f"{request.business_name} - Professional {request.business_type} services",
-            "main_keywords": [request.business_name.lower(), request.business_type.lower()],
-            "og_title": request.business_name,
-            "twitter_description": f"Professional {request.business_type} services",
-            "robots": "index, follow",
-            "canonical_url": "https://example.com",
-            "og_type": "website",
-            "twitter_card": "summary_large_image"
-        }
-        
-        # Merge generated data with fallback
-        return {**fallback_seo, **seo_data}
-        
-    except Exception as e:
-        print(f"⚠️ Error generating SEO data: {e}")
-        return {
-            "site_title": request.business_name,
-            "site_description": f"{request.business_name} - Professional {request.business_type} services",
-            "main_keywords": [request.business_name.lower(), request.business_type.lower()],
-            "robots": "index, follow",
-            "og_type": "website"
-        }
+def parse_generated_content(page_name: str, content: str, request: ContentGenerationRequest) -> PageContent:
+    """Parse generated content and extract structured information"""
+    
+    # Extract title (first # header)
+    lines = content.split('\n')
+    title = request.business_name
+    for line in lines:
+        if line.startswith('# '):
+            title = line[2:].strip()
+            break
+    
+    # Generate SEO-friendly slug
+    slug = page_name.lower().replace(' ', '-')
+    
+    # Extract or generate meta description
+    meta_description = f"{request.business_name} - {request.business_type} business"
+    if request.description:
+        meta_description = request.description[:160]
+    
+    # Generate keywords
+    keywords = [
+        request.business_name.lower(),
+        request.business_type.lower(),
+        page_name
+    ]
+    if request.industry:
+        keywords.append(request.industry.lower())
+    
+    # Generate SEO title
+    seo_title = f"{title} | {request.business_name}"
+    
+    return PageContent(
+        title=title,
+        content=content,
+        meta_description=meta_description,
+        keywords=keywords,
+        seo_title=seo_title,
+        slug=slug
+    )

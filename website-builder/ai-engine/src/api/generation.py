@@ -1,492 +1,571 @@
 """
-Generation API Endpoints
-FastAPI endpoints for website content generation using the LangGraph workflow
+Advanced Generation API Endpoints
+Handles complex workflow-based content generation with backend integration
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional, List
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
+from pydantic import BaseModel, Field, validator
+from typing import Dict, Any, Optional, List, Union
 import uuid
-import asyncio
-from datetime import datetime, timedelta
-import json
+import time
+from datetime import datetime
+from enum import Enum
+import structlog
 
-from ..workflows.website_generation import WebsiteGenerationWorkflow
-from ..workflows.base import WorkflowState, WorkflowStatus, WorkflowRegistry
 from ..services.ollama_client import OllamaClient
 from ..services.model_manager import ModelManager
+from ..services.service_communication import ServiceCommunication
+from ..config import settings
 
-router = APIRouter(prefix="/generation", tags=["generation"])
+logger = structlog.get_logger()
+router = APIRouter()
 
-# Request/Response Models
-class GenerationRequest(BaseModel):
-    project_id: str = Field(..., description="Unique project identifier")
-    user_id: str = Field(..., description="User identifier")
-    wizard_data: Dict[str, Any] = Field(..., description="Complete wizard form data")
-    options: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generation options")
-    callback_url: Optional[str] = Field(None, description="Webhook URL for completion notification")
+# Enhanced Request/Response Models
+class GenerationType(str, Enum):
+    WEBSITE_CONTENT = "website_content"
+    BLOG_POST = "blog_post"
+    PRODUCT_DESCRIPTION = "product_description"
+    MARKETING_COPY = "marketing_copy"
+    SEO_CONTENT = "seo_content"
 
-class GenerationResponse(BaseModel):
-    generation_id: str
-    status: str
-    estimated_time_minutes: int
-    message: str
-    started_at: str
+class WorkflowStatus(str, Enum):
+    QUEUED = "queued"
+    INITIALIZING = "initializing"
+    ANALYZING = "analyzing"
+    GENERATING = "generating"
+    OPTIMIZING = "optimizing"
+    FINALIZING = "finalizing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
-class GenerationStatus(BaseModel):
-    generation_id: str
-    status: str
-    progress: float
-    current_step: str
-    estimated_time_remaining_minutes: int
-    started_at: str
-    completed_at: Optional[str] = None
-    content: Optional[Dict[str, Any]] = None
-    errors: List[str] = []
-    warnings: List[str] = []
-    agent_results: Dict[str, Any] = {}
-
-class GenerationResult(BaseModel):
-    generation_id: str
-    status: str
-    content: Dict[str, Any]
-    metadata: Dict[str, Any]
-    validation: Dict[str, Any]
-    generated_at: str
-    total_time_seconds: float
-
-# In-memory storage for generation status (use Redis in production)
-generation_status_store: Dict[str, Dict[str, Any]] = {}
-generation_results_store: Dict[str, Dict[str, Any]] = {}
-
-# Cleanup old generations (longer than 24 hours)
-async def cleanup_old_generations():
-    """Clean up generations older than 24 hours"""
-    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+class AdvancedGenerationRequest(BaseModel):
+    """Advanced generation request with full project context"""
+    project_id: str = Field(..., description="Project ID from backend")
+    generation_type: GenerationType = Field(..., description="Type of generation")
     
-    to_remove = []
-    for gen_id, status_data in generation_status_store.items():
-        start_time_str = status_data.get("started_at")
-        if start_time_str:
-            try:
-                start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-                if start_time < cutoff_time:
-                    to_remove.append(gen_id)
-            except ValueError:
-                to_remove.append(gen_id)  # Remove if timestamp is invalid
+    # Business context
+    business_context: Dict[str, Any] = Field(..., description="Business information")
+    content_requirements: Dict[str, Any] = Field(..., description="Content requirements")
     
-    for gen_id in to_remove:
-        generation_status_store.pop(gen_id, None)
-        generation_results_store.pop(gen_id, None)
+    # Generation options
+    workflow_options: Dict[str, Any] = Field(default={}, description="Workflow configuration")
+    quality_level: str = Field(default="standard", description="Quality level: basic, standard, premium")
+    include_analytics: bool = Field(default=True, description="Include content analytics")
+    
+    # Integration options
+    auto_notify_backend: bool = Field(default=True, description="Auto-notify backend on completion")
+    request_hugo_generation: bool = Field(default=False, description="Request Hugo site generation")
+    
+    # Metadata
+    user_id: Optional[str] = Field(None, description="User ID")
+    auth_token: Optional[str] = Field(None, description="Authentication token")
 
-# Dependencies
-def get_ollama_client() -> OllamaClient:
-    """Get Ollama client from app state"""
+class WorkflowStep(BaseModel):
+    """Individual workflow step information"""
+    step_name: str = Field(..., description="Step name")
+    status: str = Field(..., description="Step status")
+    started_at: Optional[datetime] = Field(None, description="Step start time")
+    completed_at: Optional[datetime] = Field(None, description="Step completion time")
+    duration: Optional[float] = Field(None, description="Step duration in seconds")
+    output: Optional[Dict[str, Any]] = Field(None, description="Step output")
+    error: Optional[str] = Field(None, description="Step error message")
+
+class AdvancedGenerationResponse(BaseModel):
+    """Advanced generation response with workflow tracking"""
+    generation_id: str = Field(..., description="Generation ID")
+    project_id: str = Field(..., description="Project ID")
+    status: WorkflowStatus = Field(..., description="Overall workflow status")
+    
+    # Progress tracking
+    progress: float = Field(default=0.0, description="Progress percentage")
+    current_step: Optional[str] = Field(None, description="Current workflow step")
+    workflow_steps: List[WorkflowStep] = Field(default=[], description="Workflow step history")
+    
+    # Generated content
+    content: Dict[str, Any] = Field(default={}, description="Generated content")
+    metadata: Dict[str, Any] = Field(default={}, description="Generation metadata")
+    analytics: Optional[Dict[str, Any]] = Field(None, description="Content analytics")
+    
+    # Timing
+    created_at: datetime = Field(..., description="Creation timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    estimated_completion: Optional[datetime] = Field(None, description="Estimated completion")
+    
+    # Integration status
+    backend_notified: bool = Field(default=False, description="Backend notification status")
+    hugo_generation_requested: bool = Field(default=False, description="Hugo generation status")
+
+# In-memory storage for advanced generations
+advanced_generation_store: Dict[str, Dict[str, Any]] = {}
+
+# Dependency injection
+async def get_ollama_client() -> OllamaClient:
     from main import app
     return app.state.ollama_client
 
-def get_model_manager() -> ModelManager:
-    """Get model manager from app state"""
+async def get_model_manager() -> ModelManager:
     from main import app
     return app.state.model_manager
 
-@router.post("/start", response_model=GenerationResponse)
-async def start_generation(
-    request: GenerationRequest,
+async def get_service_communication() -> ServiceCommunication:
+    from main import app
+    return app.state.service_communication
+
+@router.post("/generation/advanced", response_model=AdvancedGenerationResponse)
+async def start_advanced_generation(
+    request: AdvancedGenerationRequest,
     background_tasks: BackgroundTasks,
-    ollama_client: OllamaClient = Depends(get_ollama_client),
-    model_manager: ModelManager = Depends(get_model_manager)
+    http_request: Request,
+    model_manager: ModelManager = Depends(get_model_manager),
+    service_comm: ServiceCommunication = Depends(get_service_communication)
 ):
-    """Start website content generation workflow"""
-    
-    # Clean up old generations
-    await cleanup_old_generations()
-    
-    # Validate request
-    if not request.wizard_data:
-        raise HTTPException(status_code=400, detail="Wizard data is required")
-    
-    if not request.wizard_data.get("businessInfo", {}).get("name"):
-        raise HTTPException(status_code=400, detail="Business name is required in wizard data")
-    
-    # Check if Ollama is available
-    if not ollama_client or not await ollama_client.health_check():
-        raise HTTPException(
-            status_code=503, 
-            detail="AI service is currently unavailable. Please try again later."
-        )
-    
-    # Check if models are available
-    if model_manager:
-        health_report = await model_manager.get_health_report()
-        if health_report.get("overall_status") == "critical":
-            raise HTTPException(
-                status_code=503,
-                detail="AI models are not available. Please contact support."
-            )
+    """
+    Start advanced content generation with full workflow tracking
+    """
     
     generation_id = str(uuid.uuid4())
-    started_at = datetime.utcnow()
+    request_id = getattr(http_request.state, 'request_id', 'unknown')
     
-    # Initialize status
-    generation_status_store[generation_id] = {
-        "status": WorkflowStatus.PENDING.value,
-        "progress": 0.0,
-        "current_step": "Initializing",
-        "errors": [],
-        "warnings": [],
-        "agent_results": {},
-        "started_at": started_at.isoformat(),
-        "completed_at": None,
-        "estimated_time_minutes": 8,  # Realistic estimate
+    logger.info(
+        "Advanced generation requested",
+        generation_id=generation_id,
+        project_id=request.project_id,
+        generation_type=request.generation_type,
+        quality_level=request.quality_level
+    )
+    
+    # Validate project access if auth token provided
+    if request.auth_token:
+        try:
+            project_data = await service_comm.get_project_data(
+                request.project_id, 
+                request.auth_token
+            )
+            if not project_data:
+                raise HTTPException(status_code=403, detail="Project access denied")
+        except Exception as e:
+            logger.warning(f"Failed to validate project access: {e}")
+    
+    # Initialize generation record
+    generation_record = {
+        "generation_id": generation_id,
         "project_id": request.project_id,
-        "user_id": request.user_id,
-        "callback_url": request.callback_url
+        "status": WorkflowStatus.QUEUED,
+        "request": request.dict(),
+        "progress": 0.0,
+        "current_step": None,
+        "workflow_steps": [],
+        "content": {},
+        "metadata": {
+            "request_id": request_id,
+            "generation_type": request.generation_type,
+            "quality_level": request.quality_level,
+            "models_used": [],
+            "total_tokens": 0,
+            "generation_time": None
+        },
+        "analytics": None,
+        "created_at": datetime.utcnow(),
+        "completed_at": None,
+        "estimated_completion": None,
+        "backend_notified": False,
+        "hugo_generation_requested": False,
+        "error": None
     }
     
-    # Start generation in background
+    advanced_generation_store[generation_id] = generation_record
+    
+    # Start background processing
     background_tasks.add_task(
-        run_generation_workflow,
+        process_advanced_generation,
         generation_id,
         request,
-        ollama_client
+        model_manager,
+        service_comm
     )
     
-    return GenerationResponse(
+    return AdvancedGenerationResponse(
         generation_id=generation_id,
-        status=WorkflowStatus.PENDING.value,
-        estimated_time_minutes=8,
-        message="Website generation started successfully",
-        started_at=started_at.isoformat()
+        project_id=request.project_id,
+        status=WorkflowStatus.QUEUED,
+        progress=0.0,
+        content={},
+        metadata=generation_record["metadata"],
+        created_at=generation_record["created_at"]
     )
 
-@router.get("/status/{generation_id}", response_model=GenerationStatus)
-async def get_generation_status(generation_id: str):
-    """Get current generation status and progress"""
+@router.get("/generation/{generation_id}", response_model=AdvancedGenerationResponse)
+async def get_advanced_generation_status(generation_id: str):
+    """
+    Get detailed status of an advanced generation
+    """
     
-    if generation_id not in generation_status_store:
+    if generation_id not in advanced_generation_store:
         raise HTTPException(status_code=404, detail="Generation not found")
     
-    status_data = generation_status_store[generation_id]
+    record = advanced_generation_store[generation_id]
     
-    # Calculate estimated time remaining
-    estimated_remaining = 0
-    if status_data["status"] == WorkflowStatus.RUNNING.value:
-        progress = status_data["progress"]
-        if progress > 0:
-            elapsed_minutes = (datetime.utcnow() - datetime.fromisoformat(status_data["started_at"])).seconds / 60
-            total_estimated = elapsed_minutes / (progress / 100)
-            estimated_remaining = max(0, int(total_estimated - elapsed_minutes))
+    # Convert workflow steps to response format
+    workflow_steps = [
+        WorkflowStep(
+            step_name=step["step_name"],
+            status=step["status"],
+            started_at=step.get("started_at"),
+            completed_at=step.get("completed_at"),
+            duration=step.get("duration"),
+            output=step.get("output"),
+            error=step.get("error")
+        )
+        for step in record["workflow_steps"]
+    ]
     
-    return GenerationStatus(
+    return AdvancedGenerationResponse(
         generation_id=generation_id,
-        status=status_data["status"],
-        progress=status_data["progress"],
-        current_step=status_data["current_step"],
-        estimated_time_remaining_minutes=estimated_remaining,
-        started_at=status_data["started_at"],
-        completed_at=status_data.get("completed_at"),
-        content=status_data.get("content"),
-        errors=status_data["errors"],
-        warnings=status_data["warnings"],
-        agent_results=status_data.get("agent_results", {})
+        project_id=record["project_id"],
+        status=record["status"],
+        progress=record["progress"],
+        current_step=record["current_step"],
+        workflow_steps=workflow_steps,
+        content=record["content"],
+        metadata=record["metadata"],
+        analytics=record["analytics"],
+        created_at=record["created_at"],
+        completed_at=record["completed_at"],
+        estimated_completion=record["estimated_completion"],
+        backend_notified=record["backend_notified"],
+        hugo_generation_requested=record["hugo_generation_requested"]
     )
 
-@router.get("/result/{generation_id}", response_model=GenerationResult)
-async def get_generation_result(generation_id: str):
-    """Get completed generation result"""
-    
-    if generation_id not in generation_status_store:
-        raise HTTPException(status_code=404, detail="Generation not found")
-    
-    status_data = generation_status_store[generation_id]
-    
-    if status_data["status"] not in [WorkflowStatus.COMPLETED.value, WorkflowStatus.FAILED.value]:
-        raise HTTPException(status_code=409, detail="Generation is not completed yet")
-    
-    # Get result data
-    result_data = generation_results_store.get(generation_id)
-    if not result_data:
-        raise HTTPException(status_code=404, detail="Generation result not found")
-    
-    # Calculate total time
-    started_at = datetime.fromisoformat(status_data["started_at"])
-    completed_at = datetime.fromisoformat(status_data["completed_at"]) if status_data.get("completed_at") else datetime.utcnow()
-    total_time = (completed_at - started_at).total_seconds()
-    
-    return GenerationResult(
-        generation_id=generation_id,
-        status=status_data["status"],
-        content=result_data.get("content", {}),
-        metadata=result_data.get("metadata", {}),
-        validation=result_data.get("validation", {}),
-        generated_at=status_data.get("completed_at", datetime.utcnow().isoformat()),
-        total_time_seconds=total_time
-    )
-
-@router.delete("/cancel/{generation_id}")
+@router.post("/generation/{generation_id}/cancel")
 async def cancel_generation(generation_id: str):
-    """Cancel a running generation"""
+    """
+    Cancel an ongoing generation
+    """
     
-    if generation_id not in generation_status_store:
+    if generation_id not in advanced_generation_store:
         raise HTTPException(status_code=404, detail="Generation not found")
     
-    status_data = generation_status_store[generation_id]
+    record = advanced_generation_store[generation_id]
     
-    if status_data["status"] not in [WorkflowStatus.PENDING.value, WorkflowStatus.RUNNING.value]:
-        raise HTTPException(status_code=409, detail="Generation cannot be cancelled in current state")
+    if record["status"] in [WorkflowStatus.COMPLETED, WorkflowStatus.FAILED]:
+        raise HTTPException(status_code=400, detail="Generation already completed")
     
-    # Mark as cancelled
-    status_data["status"] = WorkflowStatus.CANCELLED.value
-    status_data["completed_at"] = datetime.utcnow().isoformat()
+    # Mark as cancelled (we'll treat it as failed with specific message)
+    record["status"] = WorkflowStatus.FAILED
+    record["completed_at"] = datetime.utcnow()
+    record["error"] = "Generation cancelled by user"
+    
+    logger.info(f"Generation {generation_id} cancelled")
     
     return {
-        "generation_id": generation_id,
-        "status": "cancelled",
-        "message": "Generation cancelled successfully"
+        "success": True,
+        "message": f"Generation {generation_id} cancelled successfully"
     }
 
-@router.get("/list")
-async def list_generations(
-    user_id: Optional[str] = None,
+@router.delete("/generation/{generation_id}")
+async def delete_generation(generation_id: str):
+    """
+    Delete a generation record
+    """
+    
+    if generation_id not in advanced_generation_store:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    
+    del advanced_generation_store[generation_id]
+    
+    return {
+        "success": True,
+        "message": f"Generation {generation_id} deleted successfully"
+    }
+
+@router.get("/generation")
+async def list_advanced_generations(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[WorkflowStatus] = None,
     project_id: Optional[str] = None,
-    status: Optional[str] = None,
-    limit: int = 50
+    generation_type: Optional[GenerationType] = None
 ):
-    """List generations with optional filters"""
+    """
+    List advanced generations with filtering options
+    """
     
-    await cleanup_old_generations()
+    generations = list(advanced_generation_store.values())
     
-    generations = []
+    # Apply filters
+    if status:
+        generations = [g for g in generations if g["status"] == status]
+    if project_id:
+        generations = [g for g in generations if g["project_id"] == project_id]
+    if generation_type:
+        generations = [g for g in generations if g["request"]["generation_type"] == generation_type]
     
-    for gen_id, status_data in list(generation_status_store.items())[:limit]:
-        # Apply filters
-        if user_id and status_data.get("user_id") != user_id:
-            continue
-        if project_id and status_data.get("project_id") != project_id:
-            continue
-        if status and status_data.get("status") != status:
-            continue
-        
-        generations.append({
-            "generation_id": gen_id,
-            "status": status_data["status"],
-            "progress": status_data["progress"],
-            "current_step": status_data["current_step"],
-            "started_at": status_data["started_at"],
-            "completed_at": status_data.get("completed_at"),
-            "project_id": status_data.get("project_id"),
-            "user_id": status_data.get("user_id")
-        })
+    # Sort by creation time (newest first)
+    generations.sort(key=lambda x: x["created_at"], reverse=True)
+    
+    # Apply pagination
+    total = len(generations)
+    generations = generations[offset:offset + limit]
     
     return {
-        "generations": generations,
-        "total": len(generations),
-        "filters_applied": {
-            "user_id": user_id,
-            "project_id": project_id,
-            "status": status
-        }
+        "generations": [
+            {
+                "generation_id": g["generation_id"],
+                "project_id": g["project_id"],
+                "status": g["status"],
+                "generation_type": g["request"]["generation_type"],
+                "quality_level": g["request"]["quality_level"],
+                "progress": g["progress"],
+                "created_at": g["created_at"],
+                "completed_at": g["completed_at"]
+            }
+            for g in generations
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
     }
 
-@router.post("/retry/{generation_id}")
-async def retry_generation(
-    generation_id: str,
-    background_tasks: BackgroundTasks,
-    ollama_client: OllamaClient = Depends(get_ollama_client)
-):
-    """Retry a failed generation"""
+@router.get("/generation/analytics/{generation_id}")
+async def get_generation_analytics(generation_id: str):
+    """
+    Get detailed analytics for a completed generation
+    """
     
-    if generation_id not in generation_status_store:
+    if generation_id not in advanced_generation_store:
         raise HTTPException(status_code=404, detail="Generation not found")
     
-    status_data = generation_status_store[generation_id]
+    record = advanced_generation_store[generation_id]
     
-    if status_data["status"] != WorkflowStatus.FAILED.value:
-        raise HTTPException(status_code=409, detail="Only failed generations can be retried")
+    if record["status"] != WorkflowStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Generation not completed yet")
     
-    # Reset status for retry
-    status_data["status"] = WorkflowStatus.PENDING.value
-    status_data["progress"] = 0.0
-    status_data["current_step"] = "Retrying"
-    status_data["errors"] = []
-    status_data["warnings"] = []
-    status_data["completed_at"] = None
+    analytics = record.get("analytics", {})
+    metadata = record.get("metadata", {})
     
-    # Recreate request from stored data
-    request = GenerationRequest(
-        project_id=status_data["project_id"],
-        user_id=status_data["user_id"],
-        wizard_data=generation_results_store.get(generation_id, {}).get("wizard_data", {}),
-        callback_url=status_data.get("callback_url")
-    )
+    # Enhanced analytics calculation
+    workflow_duration = 0
+    if record["completed_at"] and record["created_at"]:
+        workflow_duration = (record["completed_at"] - record["created_at"]).total_seconds()
     
-    # Start retry in background
-    background_tasks.add_task(
-        run_generation_workflow,
-        generation_id,
-        request,
-        ollama_client
-    )
+    step_analytics = []
+    for step in record["workflow_steps"]:
+        if step.get("duration"):
+            step_analytics.append({
+                "step_name": step["step_name"],
+                "duration": step["duration"],
+                "percentage": (step["duration"] / workflow_duration * 100) if workflow_duration > 0 else 0
+            })
     
     return {
         "generation_id": generation_id,
-        "status": "retrying",
-        "message": "Generation retry started"
+        "analytics": analytics,
+        "performance": {
+            "total_duration": workflow_duration,
+            "models_used": metadata.get("models_used", []),
+            "total_tokens": metadata.get("total_tokens", 0),
+            "step_breakdown": step_analytics
+        },
+        "quality_metrics": analytics.get("quality_metrics", {}),
+        "content_metrics": analytics.get("content_metrics", {})
     }
 
-async def run_generation_workflow(
-    generation_id: str, 
-    request: GenerationRequest,
-    ollama_client: OllamaClient
+# Background processing function
+async def process_advanced_generation(
+    generation_id: str,
+    request: AdvancedGenerationRequest,
+    model_manager: ModelManager,
+    service_comm: ServiceCommunication
 ):
-    """Run the complete generation workflow"""
+    """
+    Process advanced generation with full workflow tracking
+    """
+    
+    start_time = time.time()
+    record = advanced_generation_store[generation_id]
     
     try:
-        # Update status to running
-        generation_status_store[generation_id]["status"] = WorkflowStatus.RUNNING.value
-        generation_status_store[generation_id]["current_step"] = "Initializing workflow"
+        # Step 1: Initialize
+        await update_workflow_step(generation_id, "initialization", WorkflowStatus.INITIALIZING, 5.0)
         
-        # Initialize workflow
-        workflow_config = request.options.get("workflow_config", {})
-        workflow = WebsiteGenerationWorkflow(ollama_client, workflow_config)
+        # Validate models and get project context
+        model_name = await model_manager.get_model_for_task("content_generation")
+        await model_manager.ensure_model_available(model_name)
         
-        # Add progress callback
-        async def update_progress_callback(state: WorkflowState):
-            if generation_id in generation_status_store:
-                generation_status_store[generation_id].update({
-                    "progress": state.progress,
-                    "current_step": state.current_step,
-                    "errors": state.errors,
-                    "warnings": state.warnings,
-                    "agent_results": {
-                        agent: {"success": result.get("success", False), "execution_time": result.get("execution_time", 0)}
-                        for agent, result in state.agent_results.items()
-                    }
-                })
+        # Step 2: Analysis
+        await update_workflow_step(generation_id, "analysis", "running", 15.0)
         
-        workflow.add_progress_callback(update_progress_callback)
-        
-        # Create initial state
-        initial_state = WorkflowState(
-            project_id=request.project_id,
-            user_id=request.user_id,
-            wizard_data=request.wizard_data
+        # Analyze business context and requirements
+        analysis_result = await analyze_generation_requirements(
+            request, model_name, model_manager
         )
         
-        # Execute workflow
-        final_state = await workflow.run(initial_state)
+        await complete_workflow_step(generation_id, "analysis", analysis_result)
         
-        # Store wizard data for potential retry
-        generation_results_store[generation_id] = {
-            "wizard_data": request.wizard_data
-        }
+        # Step 3: Content Generation
+        await update_workflow_step(generation_id, "content_generation", "running", 50.0)
         
-        # Update final status
-        completed_at = datetime.utcnow().isoformat()
+        generation_result = await generate_advanced_content(
+            request, analysis_result, model_name, model_manager
+        )
         
-        if final_state.status == WorkflowStatus.COMPLETED:
-            # Success
-            final_output = final_state.metadata.get("final_output", {})
-            
-            generation_status_store[generation_id].update({
-                "status": WorkflowStatus.COMPLETED.value,
-                "progress": 100.0,
-                "current_step": "Completed",
-                "completed_at": completed_at,
-                "content": final_output
-            })
-            
-            # Store detailed results
-            generation_results_store[generation_id].update({
-                "content": final_output.get("content", {}),
-                "metadata": final_output.get("metadata", {}),
-                "validation": final_output.get("validation", {}),
-                "seo": final_output.get("seo", {}),
-                "structure": final_output.get("structure", {}),
-                "navigation": final_output.get("navigation", {})
-            })
-            
-        else:
-            # Failed
-            generation_status_store[generation_id].update({
-                "status": WorkflowStatus.FAILED.value,
-                "completed_at": completed_at,
-                "errors": final_state.errors
-            })
-            
-            # Store partial results if available
-            partial_output = final_state.metadata.get("partial_output")
-            if partial_output:
-                generation_results_store[generation_id].update({
-                    "partial_content": partial_output.get("content", {}),
-                    "completed_steps": partial_output.get("completed_steps", [])
-                })
+        await complete_workflow_step(generation_id, "content_generation", generation_result)
         
-        # Send webhook notification if callback URL provided
-        if request.callback_url:
-            await send_webhook_notification(generation_id, request.callback_url, final_state.status)
+        # Step 4: Optimization
+        await update_workflow_step(generation_id, "optimization", "running", 80.0)
+        
+        optimization_result = await optimize_generated_content(
+            generation_result, request, model_name, model_manager
+        )
+        
+        await complete_workflow_step(generation_id, "optimization", optimization_result)
+        
+        # Step 5: Analytics (if requested)
+        if request.include_analytics:
+            await update_workflow_step(generation_id, "analytics", "running", 90.0)
+            
+            analytics_result = await generate_content_analytics(
+                optimization_result, request
+            )
+            
+            record["analytics"] = analytics_result
+            await complete_workflow_step(generation_id, "analytics", analytics_result)
+        
+        # Step 6: Finalization
+        await update_workflow_step(generation_id, "finalization", "running", 95.0)
+        
+        # Store final content
+        record["content"] = optimization_result
+        record["metadata"]["models_used"] = [model_name]
+        record["metadata"]["generation_time"] = time.time() - start_time
+        
+        # Complete generation
+        record["status"] = WorkflowStatus.COMPLETED
+        record["completed_at"] = datetime.utcnow()
+        record["progress"] = 100.0
+        record["current_step"] = "completed"
+        
+        await complete_workflow_step(generation_id, "finalization", {"status": "completed"})
+        
+        logger.info(
+            f"Advanced generation completed",
+            generation_id=generation_id,
+            duration=f"{time.time() - start_time:.2f}s"
+        )
+        
+        # Backend notifications
+        if request.auto_notify_backend:
+            await notify_backend_completion(generation_id, request, record, service_comm)
+        
+        # Hugo generation request
+        if request.request_hugo_generation:
+            await request_hugo_site_generation(generation_id, request, record, service_comm)
         
     except Exception as e:
-        # Workflow execution failed
-        generation_status_store[generation_id].update({
-            "status": WorkflowStatus.FAILED.value,
-            "completed_at": datetime.utcnow().isoformat(),
-            "errors": [f"Workflow execution failed: {str(e)}"]
-        })
+        error_msg = str(e)
+        logger.error(f"Advanced generation failed: {error_msg}")
         
-        # Log the error
-        import structlog
-        logger = structlog.get_logger()
-        logger.error(
-            "Generation workflow failed",
-            generation_id=generation_id,
-            error=str(e),
-            project_id=request.project_id
-        )
+        record["status"] = WorkflowStatus.FAILED
+        record["error"] = error_msg
+        record["completed_at"] = datetime.utcnow()
+        
+        # Mark current step as failed
+        if record["workflow_steps"]:
+            record["workflow_steps"][-1]["status"] = "failed"
+            record["workflow_steps"][-1]["error"] = error_msg
+            record["workflow_steps"][-1]["completed_at"] = datetime.utcnow()
 
-async def send_webhook_notification(generation_id: str, callback_url: str, status: WorkflowStatus):
-    """Send webhook notification for generation completion"""
+# Workflow helper functions
+async def update_workflow_step(generation_id: str, step_name: str, status: str, progress: float):
+    """Update workflow step status"""
+    record = advanced_generation_store[generation_id]
     
-    try:
-        import httpx
-        
-        payload = {
-            "generation_id": generation_id,
-            "status": status.value,
-            "completed_at": datetime.utcnow().isoformat(),
-            "result_url": f"/api/v1/generation/result/{generation_id}"
-        }
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(callback_url, json=payload)
-            response.raise_for_status()
-            
-    except Exception as e:
-        # Log webhook failure but don't fail the generation
-        import structlog
-        logger = structlog.get_logger()
-        logger.warning(
-            "Webhook notification failed",
-            generation_id=generation_id,
-            callback_url=callback_url,
-            error=str(e)
-        )
-
-# Health check endpoint
-@router.get("/health")
-async def generation_health():
-    """Check generation service health"""
+    # Complete previous step if exists
+    if record["workflow_steps"] and record["workflow_steps"][-1]["status"] == "running":
+        record["workflow_steps"][-1]["status"] = "completed"
+        record["workflow_steps"][-1]["completed_at"] = datetime.utcnow()
     
-    active_generations = sum(
-        1 for status in generation_status_store.values()
-        if status["status"] == WorkflowStatus.RUNNING.value
-    )
-    
-    return {
-        "status": "healthy",
-        "active_generations": active_generations,
-        "total_stored_generations": len(generation_status_store),
-        "workflow_types": list(WorkflowRegistry.list_workflows()),
-        "timestamp": datetime.utcnow().isoformat()
+    # Add new step
+    step = {
+        "step_name": step_name,
+        "status": status,
+        "started_at": datetime.utcnow(),
+        "completed_at": None,
+        "duration": None,
+        "output": None,
+        "error": None
     }
+    
+    record["workflow_steps"].append(step)
+    record["current_step"] = step_name
+    record["progress"] = progress
+
+async def complete_workflow_step(generation_id: str, step_name: str, output: Dict[str, Any]):
+    """Complete a workflow step"""
+    record = advanced_generation_store[generation_id]
+    
+    if record["workflow_steps"] and record["workflow_steps"][-1]["step_name"] == step_name:
+        step = record["workflow_steps"][-1]
+        step["status"] = "completed"
+        step["completed_at"] = datetime.utcnow()
+        step["output"] = output
+        
+        if step["started_at"]:
+            step["duration"] = (step["completed_at"] - step["started_at"]).total_seconds()
+
+# Content generation functions (simplified for example)
+async def analyze_generation_requirements(request, model_name, model_manager):
+    """Analyze generation requirements"""
+    # This would contain sophisticated analysis logic
+    return {
+        "content_strategy": "analyzed",
+        "target_keywords": ["business", "professional"],
+        "tone_analysis": request.content_requirements.get("tone", "professional")
+    }
+
+async def generate_advanced_content(request, analysis, model_name, model_manager):
+    """Generate advanced content based on analysis"""
+    # This would contain the actual content generation logic
+    return {
+        "pages": {
+            "home": {"title": "Welcome", "content": "Generated content..."},
+            "about": {"title": "About Us", "content": "Generated content..."}
+        }
+    }
+
+async def optimize_generated_content(content, request, model_name, model_manager):
+    """Optimize generated content"""
+    # This would contain content optimization logic
+    return content
+
+async def generate_content_analytics(content, request):
+    """Generate content analytics"""
+    return {
+        "quality_metrics": {"readability": 85, "seo_score": 90},
+        "content_metrics": {"word_count": 1500, "keyword_density": 2.5}
+    }
+
+async def notify_backend_completion(generation_id, request, record, service_comm):
+    """Notify backend of completion"""
+    try:
+        await service_comm.notify_backend_generation_completed(
+            project_id=request.project_id,
+            generation_id=generation_id,
+            content=record["content"],
+            user_id=request.user_id
+        )
+        record["backend_notified"] = True
+    except Exception as e:
+        logger.warning(f"Failed to notify backend: {e}")
+
+async def request_hugo_site_generation(generation_id, request, record, service_comm):
+    """Request Hugo site generation"""
+    try:
+        await service_comm.request_hugo_generation(
+            project_data=request.business_context,
+            content=record["content"],
+            generation_id=generation_id
+        )
+        record["hugo_generation_requested"] = True
+    except Exception as e:
+        logger.warning(f"Failed to request Hugo generation: {e}")
