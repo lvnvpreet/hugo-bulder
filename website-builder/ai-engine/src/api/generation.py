@@ -126,6 +126,16 @@ async def start_advanced_generation(
     generation_id = str(uuid.uuid4())
     request_id = getattr(http_request.state, 'request_id', 'unknown')
     
+    logger.info("🚀 [DEBUG] ===== AI ENGINE GENERATION START =====")
+    logger.info("🚀 [DEBUG] Generation ID:", generation_id=generation_id)
+    logger.info("🚀 [DEBUG] Project ID:", project_id=request.project_id)
+    logger.info("🚀 [DEBUG] Generation type:", generation_type=request.generation_type)
+    logger.info("🚀 [DEBUG] Quality level:", quality_level=request.quality_level)
+    logger.info("🚀 [DEBUG] Request ID:", request_id=request_id)
+    logger.info("🚀 [DEBUG] Business context:", business_context=request.business_context)
+    logger.info("🚀 [DEBUG] Content requirements:", content_requirements=request.content_requirements)
+    logger.info("🚀 [DEBUG] Model settings:", model_settings=request.model_settings)
+    
     logger.info(
         "Advanced generation requested",
         generation_id=generation_id,
@@ -137,14 +147,21 @@ async def start_advanced_generation(
     # Validate project access if auth token provided
     if request.auth_token:
         try:
+            logger.info("🔍 [DEBUG] Validating project access with auth token")
             project_data = await service_comm.get_project_data(
                 request.project_id, 
                 request.auth_token
             )
+            logger.info("🔍 [DEBUG] Project data received:", project_data=bool(project_data))
             if not project_data:
+                logger.error("❌ [DEBUG] Project access denied - no project data")
                 raise HTTPException(status_code=403, detail="Project access denied")
+            logger.info("✅ [DEBUG] Project access validated successfully")
         except Exception as e:
+            logger.error("❌ [DEBUG] Failed to validate project access:", error=str(e), exc_info=True)
             logger.warning(f"Failed to validate project access: {e}")
+    else:
+        logger.info("⚠️ [DEBUG] No auth token provided, skipping project validation")
     
     # Initialize generation record
     generation_record = {
@@ -381,42 +398,63 @@ async def process_advanced_generation(
     Process advanced generation with full workflow tracking
     """
     
+    logger.info("🔄 [DEBUG] ===== AI ENGINE PROCESSING START =====")
+    logger.info("🔄 [DEBUG] Processing generation:", generation_id=generation_id)
+    logger.info("🔄 [DEBUG] Project ID:", project_id=request.project_id)
+    
     start_time = time.time()
     record = advanced_generation_store[generation_id]
     
     try:
         # Step 1: Initialize
+        logger.info("📋 [DEBUG] Step 1: Initialization")
         await update_workflow_step(generation_id, "initialization", WorkflowStatus.INITIALIZING, 5.0)
         
         # Validate models and get project context
+        logger.info("🤖 [DEBUG] Getting model for content generation")
         model_name = await model_manager.get_model_for_task("content_generation")
+        logger.info("🤖 [DEBUG] Model selected:", model_name=model_name)
+        
+        logger.info("🤖 [DEBUG] Ensuring model availability")
         await model_manager.ensure_model_available(model_name)
+        logger.info("✅ [DEBUG] Model is available")
         
         # Step 2: Analysis
+        logger.info("📋 [DEBUG] Step 2: Analysis")
         await update_workflow_step(generation_id, "analysis", "running", 15.0)
         
         # Analyze business context and requirements
+        logger.info("🔍 [DEBUG] Starting requirement analysis")
         analysis_result = await analyze_generation_requirements(
             request, model_name, model_manager
         )
+        logger.info("🔍 [DEBUG] Analysis completed:", analysis_result=bool(analysis_result))
         
         await complete_workflow_step(generation_id, "analysis", analysis_result)
         
         # Step 3: Content Generation
+        logger.info("📋 [DEBUG] Step 3: Content Generation")
         await update_workflow_step(generation_id, "content_generation", "running", 50.0)
         
+        logger.info("✍️ [DEBUG] Starting content generation")
         generation_result = await generate_advanced_content(
             request, analysis_result, model_name, model_manager
         )
+        logger.info("✍️ [DEBUG] Content generation completed:", content_pages=len(generation_result.get('pages', {})))
         
         await complete_workflow_step(generation_id, "content_generation", generation_result)
         
         # Step 4: Optimization
+        logger.info("📋 [DEBUG] Step 4: Optimization")
         await update_workflow_step(generation_id, "optimization", "running", 80.0)
         
+        logger.info("⚡ [DEBUG] Starting content optimization")
         optimization_result = await optimize_generated_content(
             generation_result, request, model_name, model_manager
         )
+        logger.info("⚡ [DEBUG] Optimization completed")
+        
+        await complete_workflow_step(generation_id, "optimization", optimization_result)
         
         await complete_workflow_step(generation_id, "optimization", optimization_result)
         

@@ -161,8 +161,7 @@ class OllamaClient:
             self.available_models = [model['name'] for model in models]
             
             logger.info(f"Found {len(models)} available models")
-            return models
-            
+            return models            
         except Exception as e:
             logger.error(f"Failed to get available models: {e}")
             return []
@@ -171,7 +170,19 @@ class OllamaClient:
         """Check if a specific model is available"""
         
         models = await self.get_available_models()
-        return model_name in [model['name'] for model in models]    
+        # models is a list of dictionaries, self.available_models is a list of strings
+        if isinstance(models, list) and len(models) > 0:
+            if isinstance(models[0], dict):
+                # models is list of dicts, extract names
+                model_names = [model.get('name', '') for model in models]
+            else:
+                # models is already list of strings (from self.available_models)
+                model_names = models
+        else:
+            model_names = self.available_models
+            
+        return model_name in model_names
+    
     async def pull_model(self, model_name: str) -> bool:
         """Pull a model from Ollama registry"""
         

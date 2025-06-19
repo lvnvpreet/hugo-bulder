@@ -1,4 +1,3 @@
-
 // File: backend/src/services/WebsiteGenerationService.ts
 // Updated to integrate with your Ollama-based AI engine
 
@@ -113,30 +112,47 @@ export class WebsiteGenerationService {
 
   /**
    * Start website generation process
-   */
-  async startGeneration(options: GenerationOptions): Promise<string> {
+   */  async startGeneration(options: GenerationOptions): Promise<string> {
     const { projectId, userId, hugoTheme, customizations, contentOptions } = options;
     
-    try {
-      console.log('🎨 Starting theme detection with wizard data');
+    console.log('🚀 [DEBUG] ===== START GENERATION SERVICE =====');
+    console.log('🚀 [DEBUG] Generation options received:', JSON.stringify(options, null, 2));
+    console.log('🚀 [DEBUG] Project ID:', projectId);
+    console.log('🚀 [DEBUG] User ID:', userId);
+    console.log('🚀 [DEBUG] Hugo theme requested:', hugoTheme);
+    console.log('🚀 [DEBUG] Auto detect theme:', options.autoDetectTheme);
+    console.log('🚀 [DEBUG] Customizations:', JSON.stringify(customizations, null, 2));
+    console.log('🚀 [DEBUG] Content options:', JSON.stringify(contentOptions, null, 2));
+    
+    try {      console.log('🚀 [DEBUG] Starting theme detection with wizard data');
       console.log('📋 Website type:', options);
       
       // Validate generation options
+      console.log('✅ [DEBUG] Validating generation options...');
       const validationResult = validateGenerationOptions(options);
+      
+      console.log('✅ [DEBUG] Validation result:', {
+        isValid: validationResult.isValid,
+        errorCount: validationResult.errors?.length || 0,
+        errors: validationResult.errors
+      });
+      
       if (!validationResult.isValid) {
+        console.error('❌ [DEBUG] Validation failed:', validationResult.errors);
         throw new GenerationValidationError(
           'Invalid generation options',
-          validationResult.errors
+          validationResult.errors.join(', ')
         );
       }
 
       if (!this.prisma) {
+        console.error('❌ [DEBUG] Database connection not available');
         throw new AppError('Database connection not available', 500, 'DATABASE_NOT_AVAILABLE');
       }
 
       // Check if project exists and belongs to user
-      console.log(`🔍 Checking project ${projectId} for user ${userId}`);
-      
+      console.log(`🔍 [DEBUG] Checking project ${projectId} for user ${userId}`);
+      console.log(`🔍 [DEBUG] Making database query for project...`);      
       const project = await this.prisma.project.findFirst({
         where: {
           id: projectId,
@@ -147,15 +163,38 @@ export class WebsiteGenerationService {
         },
       });
 
+      console.log(`🔍 [DEBUG] Database query completed`);
+      console.log(`🔍 [DEBUG] Project found:`, !!project);
+      
+      if (project) {
+        console.log(`🔍 [DEBUG] Project details:`, {
+          id: project.id,
+          name: project.name,
+          isCompleted: project.isCompleted,
+          userId: project.userId,
+          hasWizardData: !!project.wizardData,
+          wizardStepsCount: project.wizardSteps?.length || 0,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt
+        });
+      }
+
       if (!project) {
+        console.error(`❌ [DEBUG] Project not found - projectId: ${projectId}, userId: ${userId}`);
         throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
       }
 
       if (!project.isCompleted) {
+        console.error(`❌ [DEBUG] Project not completed:`, {
+          projectId: project.id,
+          isCompleted: project.isCompleted,
+          hasWizardData: !!project.wizardData,
+          wizardDataType: typeof project.wizardData
+        });
         throw new AppError('Project must be completed before generation', 400, 'PROJECT_NOT_COMPLETED');
-      }
-
-      // Check for any active generation for this project
+      }      // Check for any active generation for this project
+      console.log(`🔍 [DEBUG] Checking for active generations for project ${projectId}...`);
+      
       const activeGeneration = await this.prisma.siteGeneration.findFirst({
         where: {
           projectId: projectId,
@@ -173,44 +212,81 @@ export class WebsiteGenerationService {
         },
       });
 
-      if (activeGeneration) {
-        throw new AppError('Generation already in progress for this project', 409, 'GENERATION_IN_PROGRESS');
-      }
+      console.log(`🔍 [DEBUG] Active generation check result:`, {
+        hasActiveGeneration: !!activeGeneration,
+        activeGenerationId: activeGeneration?.id,
+        activeGenerationStatus: activeGeneration?.status
+      });
 
-      // Determine Hugo theme
+      if (activeGeneration) {
+        console.error(`❌ [DEBUG] Generation already in progress:`, {
+          generationId: activeGeneration.id,
+          status: activeGeneration.status,
+          startedAt: activeGeneration.startedAt
+        });
+        throw new AppError('Generation already in progress for this project', 409, 'GENERATION_IN_PROGRESS');
+      }      // Determine Hugo theme
+      console.log(`🎨 [DEBUG] Determining Hugo theme...`);
+      console.log(`🎨 [DEBUG] Requested theme:`, hugoTheme);
+      console.log(`🎨 [DEBUG] Auto detect theme:`, options.autoDetectTheme);
+      
       let finalTheme = hugoTheme || 'ananke';
       
       if (options.autoDetectTheme || !hugoTheme) {
         try {
-          console.log('🎯 Auto-detecting theme based on project data...');
+          console.log('🎯 [DEBUG] Auto-detecting theme based on project data...');
+          console.log('🎯 [DEBUG] Project wizardData type:', typeof project.wizardData);
+          
           const detectedTheme = await this.themeDetection.detectTheme(project.wizardData);
-          if (detectedTheme) {
-            finalTheme = detectedTheme;
-            console.log(`✅ Theme auto-detected: ${finalTheme}`);
+          
+          console.log('🎯 [DEBUG] Theme detection result:', detectedTheme);
+            if (detectedTheme) {
+            finalTheme = typeof detectedTheme === 'string' ? detectedTheme : detectedTheme.themeId || 'ananke';
+            console.log(`✅ [DEBUG] Theme auto-detected: ${finalTheme}`);
+          } else {
+            console.log(`⚠️ [DEBUG] No theme detected, using fallback: ${finalTheme}`);
           }
         } catch (themeError) {
-          console.warn('⚠️ Theme detection failed, using fallback:', themeError);
+          console.error('❌ [DEBUG] Theme detection failed:', {
+            error: themeError,
+            message: themeError instanceof Error ? themeError.message : String(themeError),
+            stack: themeError instanceof Error ? themeError.stack : undefined
+          });
+          console.warn(`⚠️ [DEBUG] Using fallback theme: ${finalTheme}`);
         }
       }
-
-      // Create generation record
+      
+      console.log(`🎨 [DEBUG] Final theme selected: ${finalTheme}`);      // Create generation record
+      console.log(`📝 [DEBUG] Creating generation record...`);
       const generationId = uuidv4();
+      console.log(`📝 [DEBUG] Generated ID: ${generationId}`);
+      
+      const generationData = {
+        id: generationId,
+        projectId: projectId,
+        status: SiteGenerationStatus.PENDING,
+        hugoTheme: finalTheme,
+        customizations: customizations || {},
+        contentOptions: contentOptions || {},
+        progress: 0,
+        currentStep: 'Initializing...',
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      };
+      
+      console.log(`📝 [DEBUG] Generation data to create:`, JSON.stringify(generationData, null, 2));
+      
       const generation = await this.prisma.siteGeneration.create({
-        data: {
-          id: generationId,
-          projectId: projectId,
-          status: SiteGenerationStatus.PENDING,
-          hugoTheme: finalTheme,
-          customizations: customizations || {},
-          contentOptions: contentOptions || {},
-          progress: 0,
-          currentStep: 'Initializing...',
-          startedAt: new Date(),
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        },
+        data: generationData,
       });
 
-      console.log(`✅ Generation record created: ${generationId}`);
+      console.log(`✅ [DEBUG] Generation record created successfully:`, {
+        id: generation.id,
+        projectId: generation.projectId,
+        status: generation.status,
+        theme: generation.hugoTheme,
+        startedAt: generation.startedAt
+      });
 
       // Send webhook notification for generation started
       await this.sendWebhookNotification({
@@ -240,16 +316,31 @@ export class WebsiteGenerationService {
 
       console.log(`✅ Generation queued successfully: ${generationId}`);
       
-      return generationId;
-
-    } catch (error) {
-      console.error('❌ Failed to start generation:', error);
+      return generationId;    } catch (error) {
+      console.log('🚨 [DEBUG] ===== START GENERATION ERROR =====');
+      console.error('❌ [DEBUG] Failed to start generation:', error);
+      console.log('🚨 [DEBUG] Error type:', typeof error);
+      console.log('🚨 [DEBUG] Error constructor:', error instanceof Error ? error.constructor.name : 'Unknown');
       
-      if (error instanceof AppError) {
-        throw error;
+      if (error instanceof Error) {
+        console.log('🚨 [DEBUG] Error message:', error.message);
+        console.log('🚨 [DEBUG] Error stack:', error.stack);
       }
       
-      if (error instanceof GenerationValidationError) {
+      if (error instanceof AppError) {
+        console.log('🚨 [DEBUG] AppError details:', {
+          message: error.message,
+          statusCode: error.statusCode,
+          code: error.code
+        });
+        throw error;
+      }
+        if (error instanceof GenerationValidationError) {
+        console.log('🚨 [DEBUG] Validation error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details
+        });
         throw new AppError(error.message, 400, 'VALIDATION_ERROR');
       }
 
@@ -420,41 +511,50 @@ export class WebsiteGenerationService {
 
   /**
    * Parse and structure project data from wizard steps
-   */
-  private parseProjectData(project: Project & { wizardSteps: any[] }): any {
-    const wizardData = project.wizardData || {};
+   */  private parseProjectData(project: Project & { wizardSteps: any[] }): any {
+    // Cast wizardData to any to avoid TypeScript errors with the dynamic structure
+    const wizardData = project.wizardData as any || {};
     
     return {
-      businessName: wizardData.businessInfo?.name || project.name,
-      businessType: wizardData.businessInfo?.type || 'business',
-      description: wizardData.businessInfo?.description || project.description,
-      industry: wizardData.businessInfo?.industry,
-      target_audience: wizardData.targetAudience,
-      location: wizardData.businessInfo?.location,
-      contact: wizardData.contactInfo,
-      features: wizardData.features || [],
-      pages: wizardData.pages || ['home', 'about', 'services', 'contact'],
-      seo: wizardData.seo || {},
-      branding: wizardData.branding || {}
+      businessName: wizardData?.businessInfo?.name || project.name,
+      businessType: wizardData?.websiteType?.id || wizardData?.businessInfo?.type || 'business',
+      description: wizardData?.businessInfo?.description || project.description,
+      industry: wizardData?.businessCategory?.id || wizardData?.businessInfo?.industry || 'general',
+      target_audience: wizardData?.businessDescription?.targetAudience || 'general',
+      location: wizardData?.businessInfo?.location || wizardData?.contactInfo?.address,
+      contact: wizardData?.contactInfo || {},
+      features: wizardData?.selectedFeatures || wizardData?.features || [],
+      pages: ['home', 'about', 'services', 'contact'], // Standard pages
+      seo: wizardData?.additionalRequirements?.seoFocus || wizardData?.seo || {},
+      branding: wizardData?.themeConfig || wizardData?.branding || {}
     };
   }
-
   /**
    * Generate content using Ollama AI service
-   */
-  private async generateOllamaContent(projectData: any, contentOptions: any): Promise<OllamaContentResponse> {
+   */  private async generateOllamaContent(projectData: any, contentOptions: any): Promise<OllamaContentResponse> {
     try {
       console.log('🤖 Calling Ollama AI service for content generation...');
       console.log(`📡 AI Engine URL: ${this.aiEngineUrl}`);
       
-      // Check if AI engine is available
+      // Check if AI engine is available with shorter timeout
+      console.log('🔍 Performing AI engine health check...');
       const healthCheck = await axios.get(`${this.aiEngineUrl}/api/v1/health`, {
-        timeout: 5000
+        timeout: 30000, // 30 seconds timeout for health check
+        maxRedirects: 0, // Disable redirects
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Hugo-Builder-Backend/1.0'
+        }
       });
       
       console.log(`✅ AI Engine health check passed: ${healthCheck.data.status}`);
+      console.log(`🔧 Health check response time: ${healthCheck.headers['x-process-time'] || 'unknown'}`);
       
-      const response = await axios.post(`${this.aiEngineUrl}/api/v1/content/generate-content`, {
+      // Start content generation
+      console.log('🎯 Starting content generation...');
+      const startTime = Date.now();
+      
+      const startResponse = await axios.post(`${this.aiEngineUrl}/api/v1/content/generate-content`, {
         business_name: projectData.businessName,
         business_type: projectData.businessType,
         industry: projectData.industry,
@@ -466,22 +566,106 @@ export class WebsiteGenerationService {
         include_seo: contentOptions?.includeSEO || true,
         model: contentOptions?.aiModel // Allow model selection
       }, {
-        timeout: 120000, // 2 minutes timeout for AI generation
+        timeout: 60000, // 1 minute timeout for starting generation
+        maxRedirects: 0,
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Hugo-Builder-Backend/1.0'
         }
       });
-
-      console.log('✅ Ollama AI content generated successfully');
-      console.log(`📊 Generation stats: ${response.data.word_count_total} words, ${response.data.generation_time?.toFixed(2)}s`);
       
-      return response.data;
+      const generationId = startResponse.data.generation_id;
+      console.log(`🎯 Content generation started with ID: ${generationId}`);
+      
+      // Now poll for completion
+      console.log('🔄 Polling for content generation completion...');
+      let attempts = 0;
+      const maxAttempts = 150; // 5 minutes max (150 * 2 seconds)
+      let lastStatus = 'unknown';
+      
+      while (attempts < maxAttempts) {
+        try {
+          // Check status
+          const statusResponse = await axios.get(`${this.aiEngineUrl}/api/v1/content/status/${generationId}`, {
+            timeout: 10000, // 10 seconds timeout for status check
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Hugo-Builder-Backend/1.0'
+            }
+          });
+          
+          const status = statusResponse.data.status;
+          const progress = statusResponse.data.progress || 0;
+          const currentStep = statusResponse.data.current_step || 'Processing...';
+          
+          if (status !== lastStatus) {
+            console.log(`📊 AI Generation Status: ${status} (${progress.toFixed(1)}%) - ${currentStep}`);
+            lastStatus = status;
+          }
+          
+          if (status === 'completed') {
+            console.log('✅ AI content generation completed! Fetching results...');
+            
+            // Get the final result
+            const resultResponse = await axios.get(`${this.aiEngineUrl}/api/v1/content/result/${generationId}`, {
+              timeout: 30000,
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Hugo-Builder-Backend/1.0'
+              }
+            });
+            
+            const result = resultResponse.data;
+            
+            console.log(`⏱️ Content generation completed in ${Date.now() - startTime}ms`);
+            console.log('✅ Ollama AI content generated successfully');
+            console.log(`📊 Generation stats: ${Object.keys(result.pages).length} pages generated`);
+            
+            return {
+              pages: result.pages,
+              generation_time: (Date.now() - startTime) / 1000,
+              model_used: result.metadata?.model_used || 'unknown',
+              word_count_total: this.calculateWordCount(result.pages),
+              generation_id: generationId
+            };
+          } else if (status === 'failed') {
+            throw new Error(`AI content generation failed: ${statusResponse.data.error || 'Unknown error'}`);
+          }
+          
+          // Wait 2 seconds before next check
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          attempts++;
+          
+        } catch (statusError) {
+          console.error(`❌ Error checking AI generation status (attempt ${attempts + 1}):`, statusError);
+          
+          // If we can't check status, wait a bit and try again
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          attempts++;
+        }
+      }
+      
+      throw new Error('AI content generation timed out after 5 minutes');
+        
     } catch (error) {
-      console.warn('⚠️ Ollama AI content generation failed:', error);
+      console.error('❌ Ollama AI content generation failed:', error);
       
       if (axios.isAxiosError(error)) {
-        console.warn(`📡 AI Engine connection error: ${error.code} - ${error.message}`);
-        console.warn(`🔗 Attempted URL: ${this.aiEngineUrl}/api/v1/content/generate-content`);
+        console.error(`🚨 Axios Error Details:`);
+        console.error(`   Code: ${error.code}`);
+        console.error(`   Message: ${error.message}`);
+        console.error(`   URL: ${error.config?.url}`);
+        console.error(`   Method: ${error.config?.method?.toUpperCase()}`);
+        console.error(`   Timeout: ${error.config?.timeout}ms`);
+        
+        if (error.response) {
+          console.error(`   Response Status: ${error.response.status}`);
+          console.error(`   Response Headers:`, error.response.headers);
+        } else if (error.request) {
+          console.error(`   No response received`);
+          console.error(`   Request timeout or network error`);
+        }
       }
       
       // Fallback content generation
@@ -937,6 +1121,23 @@ We understand that business moves fast. That's why we guarantee a response to al
     if (bytes === 0) return '0 Bytes';
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  /**
+   * Calculate total word count from generated pages
+   */
+  private calculateWordCount(pages: Record<string, any>): number {
+    let totalWords = 0;
+    
+    for (const pageContent of Object.values(pages)) {
+      if (pageContent && typeof pageContent === 'object' && pageContent.content) {
+        // Simple word count - split by whitespace and filter empty strings
+        const words = pageContent.content.toString().split(/\s+/).filter((word: string) => word.length > 0);
+        totalWords += words.length;
+      }
+    }
+    
+    return totalWords;
   }
 
   // ... Keep all existing methods below (updateGenerationProgress, completeGeneration, etc.)

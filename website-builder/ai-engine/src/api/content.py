@@ -127,8 +127,23 @@ async def generate_content(
     Generate website content based on business information
     """
     
+    logger.info("🎯 [DEBUG] ===== CONTENT GENERATION ENDPOINT HIT =====")
+    logger.info("🎯 [DEBUG] Request received at /content/generate-content")
+    logger.info("🎯 [DEBUG] HTTP method:", method=http_request.method)
+    logger.info("🎯 [DEBUG] Request headers:", headers=dict(http_request.headers))
+    logger.info("🎯 [DEBUG] Request client:", client=http_request.client)
+    
     # Log the incoming request for debugging
-    logger.info(f"=== INCOMING CONTENT GENERATION REQUEST ===")
+    logger.info("=== INCOMING CONTENT GENERATION REQUEST ===")
+    logger.info("📋 [DEBUG] Request validation status: SUCCESS")
+    logger.info("📋 [DEBUG] Business name:", business_name=request.business_name, type=type(request.business_name).__name__)
+    logger.info("📋 [DEBUG] Business type:", business_type=request.business_type, type=type(request.business_type).__name__)
+    logger.info("📋 [DEBUG] Tone:", tone=request.tone, type=type(request.tone).__name__)
+    logger.info("📋 [DEBUG] Length:", length=request.length, type=type(request.length).__name__)
+    logger.info("📋 [DEBUG] Pages:", pages=request.pages, type=type(request.pages).__name__, count=len(request.pages) if hasattr(request.pages, '__len__') else 'unknown')
+    logger.info("📋 [DEBUG] Description:", description=getattr(request, 'description', 'not provided'))
+    logger.info("📋 [DEBUG] Contact info:", contact_info=getattr(request, 'contact_info', 'not provided'))
+    
     logger.info(f"Request validated successfully")
     logger.info(f"business_name: {request.business_name} (type: {type(request.business_name)})")
     logger.info(f"tone: {request.tone} (type: {type(request.tone)})")
@@ -139,6 +154,10 @@ async def generate_content(
     generation_id = str(uuid.uuid4())
     request_id = getattr(http_request.state, 'request_id', 'unknown')
     
+    logger.info("🔍 [DEBUG] Generation identifiers created:")
+    logger.info("🔍 [DEBUG] Generation ID:", generation_id=generation_id)
+    logger.info("🔍 [DEBUG] Request ID:", request_id=request_id)
+    
     logger.info(
         "Content generation requested",
         generation_id=generation_id,
@@ -146,21 +165,27 @@ async def generate_content(
         business_name=request.business_name,
         pages=request.pages,
         tone=request.tone
-    )
-      # Initialize generation record
+    )      # Initialize generation record
+    logger.info("📝 [DEBUG] Creating generation record")
     try:
+        logger.info("📝 [DEBUG] Converting request to dictionary")
         request_dict = request.dict()
-        logger.info(f"Successfully converted request to dict")
+        logger.info("✅ [DEBUG] Successfully converted request to dict:", keys=list(request_dict.keys()))
+        logger.info("📝 [DEBUG] Request dict content:", request_dict=request_dict)
     except Exception as dict_error:
-        logger.error(f"Error converting request to dict: {dict_error}")
+        logger.error("❌ [DEBUG] Error converting request to dict:", error=str(dict_error), exc_info=True)
         # Create a safe fallback dict
+        logger.info("🔄 [DEBUG] Creating fallback dictionary")
         request_dict = {
             "business_name": getattr(request, 'business_name', 'Unknown'),
             "business_type": getattr(request, 'business_type', 'Unknown'),
             "pages": getattr(request, 'pages', ['home']),
             "tone": str(getattr(request, 'tone', 'professional')),
-            "length": str(getattr(request, 'length', 'medium'))        }
+            "length": str(getattr(request, 'length', 'medium'))
+        }
+        logger.info("✅ [DEBUG] Fallback dictionary created:", fallback_dict=request_dict)
     
+    logger.info("📝 [DEBUG] Creating generation record structure")
     generation_record = {
         "generation_id": generation_id,
         "status": "queued",  # Use string directly instead of enum
@@ -176,23 +201,35 @@ async def generate_content(
         "created_at": datetime.utcnow(),
         "completed_at": None,
         "error": None
-    }
+    }    
+    logger.info("✅ [DEBUG] Generation record created successfully:", record_id=generation_record["generation_id"])
     
+    logger.info("💾 [DEBUG] Storing generation record in memory store")
     generation_store[generation_id] = generation_record
+    logger.info("✅ [DEBUG] Generation record stored, store size:", store_size=len(generation_store))
     
     # Notify backend if project_id is provided
     if request.project_id and service_comm:
         try:
+            logger.info("📡 [DEBUG] Notifying backend of generation start:", project_id=request.project_id)
             await service_comm.notify_backend_generation_started(
                 project_id=request.project_id,
                 generation_id=generation_id,
                 user_id=request.user_id
             )
+            logger.info("✅ [DEBUG] Backend notification sent successfully")
         except Exception as e:
+            logger.error("❌ [DEBUG] Failed to notify backend:", error=str(e), exc_info=True)
             logger.warning(f"Failed to notify backend: {e}")
+    else:
+        logger.info("⚠️ [DEBUG] Skipping backend notification:", has_project_id=bool(request.project_id), has_service_comm=bool(service_comm))
+        
       # Start background generation
     try:
+        logger.info("🚀 [DEBUG] Starting background content generation task")
+        logger.info("🚀 [DEBUG] Task parameters:", generation_id=generation_id, business_name=request.business_name)
         logger.info(f"About to start background task for {generation_id}")
+        
         background_tasks.add_task(
             process_content_generation,
             generation_id,
@@ -200,20 +237,29 @@ async def generate_content(
             model_manager,
             service_comm
         )
+        logger.info("✅ [DEBUG] Background task added successfully")
         logger.info(f"Background task started successfully for {generation_id}")
     except Exception as bg_error:
+        logger.error("❌ [DEBUG] Failed to start background task:", error=str(bg_error), exc_info=True)
         logger.error(f"Failed to start background task: {bg_error}")
         # Mark generation as failed
+        logger.info("🔄 [DEBUG] Marking generation as failed in store")
         generation_store[generation_id]["status"] = "failed"
         generation_store[generation_id]["error"] = f"Failed to start generation: {str(bg_error)}"
     
-    return ContentGenerationResponse(
+    logger.info("📤 [DEBUG] Preparing response for client")
+    response_data = ContentGenerationResponse(
         generation_id=generation_id,
         status="queued",
         pages={},
         metadata=generation_record["metadata"],
         created_at=generation_record["created_at"]
     )
+    
+    logger.info("✅ [DEBUG] Response created successfully:", response_generation_id=response_data.generation_id)
+    logger.info("🎯 [DEBUG] ===== CONTENT GENERATION ENDPOINT RESPONSE =====")
+    
+    return response_data
 
 @router.get("/content/status/{generation_id}", response_model=GenerationStatusResponse)
 async def get_generation_status(generation_id: str):
@@ -458,22 +504,80 @@ async def generate_page_content(
     model_manager: ModelManager
 ) -> PageContent:
     """
-    Generate content for a specific page
+    Generate content for a specific page using the AI model
     """
     
-    # VERY FIRST THING - log entry
-    logger.info(f"=== ENTERED generate_page_content ===")
-    logger.info(f"Args: page_name={page_name}, request={type(request)}, model_name={model_name}")
+    logger.info(f"=== GENERATING CONTENT FOR PAGE: {page_name} ===")
+    logger.info(f"Using model: {model_name}")
+    logger.info(f"Business: {request.business_name} ({request.business_type})")
     
-    # Return simple test content for now
-    return PageContent(
-        title=f"Test {page_name} Title",
-        content=f"# Test {page_name} Content\n\nThis is test content.",
-        meta_description=f"Test meta description",
-        keywords=[page_name, "test"],
-        seo_title=f"Test {page_name} Title",
-        slug=page_name.lower()
-    )
+    try:
+        # Get the Ollama client from model manager
+        ollama_client = model_manager.ollama_client
+        
+        # Create prompts
+        system_prompt = create_system_prompt(request.tone, request.length, request.include_seo)
+        page_prompt = create_page_prompt(page_name, request)
+        
+        logger.info(f"Generated prompts for {page_name}")
+        logger.info(f"System prompt length: {len(system_prompt)} chars")
+        logger.info(f"Page prompt length: {len(page_prompt)} chars")        # Generate content using Ollama
+        logger.info(f"Calling Ollama model {model_name} for content generation...")
+        start_time = time.time()
+        
+        try:
+            ollama_response = await ollama_client.generate(
+                model=model_name,
+                prompt=page_prompt,
+                system_prompt=system_prompt,
+                temperature=0.7,
+                max_tokens=2000
+            )
+            logger.info(f"✅ Ollama generate call completed successfully")
+        except Exception as generate_error:
+            logger.error(f"❌ Error in ollama_client.generate: {str(generate_error)}")
+            logger.error(f"❌ Error type: {type(generate_error)}")
+            raise
+        
+        generation_time = time.time() - start_time
+        logger.info(f"Content generated in {generation_time:.2f}s")
+        
+        # Debug: Log the actual response from Ollama
+        logger.info(f"Ollama response type: {type(ollama_response)}")
+        logger.info(f"Ollama response keys: {list(ollama_response.keys()) if isinstance(ollama_response, dict) else 'Not a dict'}")
+        if isinstance(ollama_response, dict):
+            logger.info(f"Response content preview: {str(ollama_response)[:200]}...")
+        
+        # Extract the actual content from the Ollama response
+        if isinstance(ollama_response, dict) and 'response' in ollama_response:
+            generated_content = ollama_response['response']
+        else:
+            # Handle unexpected response format
+            logger.error(f"Unexpected Ollama response format: {type(ollama_response)}")
+            logger.error(f"Response content: {ollama_response}")
+            raise ValueError(f"Invalid response format from Ollama: {type(ollama_response)}")
+        
+        logger.info(f"Generated content length: {len(generated_content)} chars")
+        
+        # Parse and structure the generated content
+        parsed_content = parse_generated_content(page_name, generated_content, request)
+        
+        logger.info(f"Successfully generated and parsed content for {page_name}")
+        return parsed_content
+        
+    except Exception as e:
+        logger.error(f"Error generating content for {page_name}: {str(e)}")
+        logger.error(f"Falling back to placeholder content")
+        
+        # Fallback to basic content if AI generation fails
+        return PageContent(
+            title=f"{request.business_name} - {page_name.title()}",
+            content=f"# {request.business_name} - {page_name.title()}\n\nWelcome to our {page_name} page. We are a {request.business_type} business focused on providing excellent service.\n\n## About Our {page_name.title()}\n\n{request.description or 'We are committed to serving our customers with dedication and expertise.'}\n\n## Contact Us\n\nFor more information, please get in touch with us.",
+            meta_description=f"{request.business_name} - {request.business_type} business {page_name}",
+            keywords=[request.business_name.lower(), request.business_type.lower(), page_name],
+            seo_title=f"{page_name.title()} | {request.business_name}",
+            slug=page_name.lower()
+        )
 
 def create_page_prompt(page_name: str, request: ContentGenerationRequest) -> str:
     """Create a page-specific prompt for content generation"""
@@ -612,8 +716,7 @@ def create_system_prompt(tone: ContentTone, length: ContentLength, include_seo: 
         ContentTone.TECHNICAL: "Use precise, industry-specific terminology and detailed explanations."
     }
     
-    length_instructions = {
-        ContentLength.SHORT: "Keep content concise - 200-400 words per section.",
+    length_instructions = {        ContentLength.SHORT: "Keep content concise - 200-400 words per section.",
         ContentLength.MEDIUM: "Write moderate length content - 400-800 words per section.",
         ContentLength.LONG: "Create comprehensive content - 800-1200 words per section.",
         ContentLength.DETAILED: "Write in-depth, thorough content - 1200+ words per section."
@@ -622,10 +725,28 @@ def create_system_prompt(tone: ContentTone, length: ContentLength, include_seo: 
     seo_instruction = "\nOptimize for SEO with natural keyword integration, meta descriptions, and search-friendly structure." if include_seo else ""
     
     # Handle tone and length parameters safely
-    tone_key = tone if isinstance(tone, ContentTone) else ContentTone(tone) if tone in [e.value for e in ContentTone] else ContentTone.PROFESSIONAL
-    length_key = length if isinstance(length, ContentLength) else ContentLength(length) if length in [e.value for e in ContentLength] else ContentLength.MEDIUM
+    if isinstance(tone, ContentTone):
+        tone_key = tone
+    else:
+        # Try to convert string to enum
+        try:
+            tone_key = ContentTone(tone)
+        except ValueError:
+            tone_key = ContentTone.PROFESSIONAL
     
-    return f"{base_prompt}\n\n{tone_instructions[tone_key]}\n\n{length_instructions[length_key]}{seo_instruction}\n\nAlways format content in clean Markdown with proper headers and structure."
+    if isinstance(length, ContentLength):
+        length_key = length
+    else:
+        # Try to convert string to enum
+        try:
+            length_key = ContentLength(length)
+        except ValueError:
+            length_key = ContentLength.MEDIUM
+    
+    tone_instruction = tone_instructions.get(tone_key, tone_instructions[ContentTone.PROFESSIONAL])
+    length_instruction = length_instructions.get(length_key, length_instructions[ContentLength.MEDIUM])
+    
+    return f"{base_prompt}\n\n{tone_instruction}\n\n{length_instruction}{seo_instruction}\n\nAlways format content in clean Markdown with proper headers and structure."
 
 def parse_generated_content(page_name: str, content: str, request: ContentGenerationRequest) -> PageContent:
     """Parse generated content and extract structured information"""

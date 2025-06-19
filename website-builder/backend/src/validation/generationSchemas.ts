@@ -78,7 +78,7 @@ export const getHistorySchema = Joi.object({
 
 // Schema for generation ID parameter
 export const generationIdSchema = Joi.object({
-  generationId: Joi.string().min(20).max(30).required().messages({
+  generationId: Joi.string().min(20).max(40).required().messages({
     'string.empty': 'Generation ID is required',
     'string.min': 'Invalid generation ID format',
     'string.max': 'Invalid generation ID format',
@@ -88,7 +88,7 @@ export const generationIdSchema = Joi.object({
 
 // Schema for project ID parameter
 export const projectIdSchema = Joi.object({
-  projectId: Joi.string().min(20).max(30).required().messages({
+  projectId: Joi.string().min(20).max(40).required().messages({
     'string.empty': 'Project ID is required',
     'string.min': 'Invalid project ID format',
     'string.max': 'Invalid project ID format',
@@ -136,7 +136,7 @@ export const generationAnalyticsSchema = Joi.object({
 
 // Schema for detect theme endpoint parameter
 export const detectThemeParamSchema = Joi.object({
-  projectId: Joi.string().min(20).max(30).required().messages({
+  projectId: Joi.string().min(20).max(40).required().messages({
     'string.empty': 'Project ID is required',
     'string.min': 'Invalid project ID format',
     'string.max': 'Invalid project ID format',

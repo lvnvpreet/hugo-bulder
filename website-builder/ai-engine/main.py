@@ -48,38 +48,62 @@ service_communication: Optional[ServiceCommunication] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
-    global ollama_client, model_manager, service_communication
-    
-    # Startup
-    logger.info("🚀 Starting AI Engine service...")
+    logger.info("🚀 [DEBUG] ===== AI ENGINE STARTUP =====")
+    logger.info("🚀 [DEBUG] Starting AI Engine application")
+    logger.info("🚀 [DEBUG] Python version:", version=sys.version)
+    logger.info("🚀 [DEBUG] Working directory:", cwd=os.getcwd())
+    logger.info("🚀 [DEBUG] Environment variables:", env={
+        "OLLAMA_HOST": os.getenv("OLLAMA_HOST", "not set"),
+        "MODEL_NAME": os.getenv("MODEL_NAME", "not set"),
+        "BACKEND_URL": os.getenv("BACKEND_URL", "not set"),
+        "HUGO_GENERATOR_URL": os.getenv("HUGO_GENERATOR_URL", "not set"),
+    })
     
     try:
-        # Initialize core services
-        logger.info("Initializing Ollama client...")
-        ollama_client = OllamaClient(base_url=settings.OLLAMA_BASE_URL)
+        # Initialize services
+        logger.info("🔧 [DEBUG] Initializing Ollama client")
+        global ollama_client, model_manager, service_communication
         
-        logger.info("Initializing model manager...")
+        ollama_client = OllamaClient()
+        logger.info("✅ [DEBUG] Ollama client initialized")
+        
+        logger.info("🔧 [DEBUG] Initializing model manager")
         model_manager = ModelManager(ollama_client)
+        logger.info("✅ [DEBUG] Model manager initialized")
         
-        logger.info("Initializing service communication...")
+        logger.info("🔧 [DEBUG] Initializing service communication")
         service_communication = ServiceCommunication()
+        logger.info("✅ [DEBUG] Service communication initialized")
         
         # Store in app state for dependency injection
         app.state.ollama_client = ollama_client
         app.state.model_manager = model_manager
         app.state.service_communication = service_communication
+          # Test connections
+        logger.info("🔍 [DEBUG] Testing Ollama connection")
+        try:
+            await ollama_client.health_check()
+            logger.info("✅ [DEBUG] Ollama connection successful")
+        except Exception as e:
+            logger.error("❌ [DEBUG] Ollama connection failed:", error=str(e))
         
-        # Health check
-        await ollama_client.health_check()
-        await model_manager.initialize()
+        logger.info("🔍 [DEBUG] Testing backend service communication")
+        try:
+            health_status = await service_communication.check_backend_health()
+            logger.info("✅ [DEBUG] Backend health check:", status=health_status)
+        except Exception as e:
+            logger.error("❌ [DEBUG] Backend health check failed:", error=str(e))
         
-        logger.info("✅ AI Engine service started successfully")
+        logger.info("✅ [DEBUG] AI Engine startup completed successfully")
         
         yield
         
     except Exception as e:
-        logger.error(f"❌ Failed to start AI Engine service: {e}")
+        logger.error("❌ [DEBUG] Failed to initialize AI Engine:", error=str(e), exc_info=True)
         raise
+    finally:
+        logger.info("🔄 [DEBUG] AI Engine shutting down")
+        # Cleanup if needed
     
     # Shutdown
     logger.info("🛑 Shutting down AI Engine service...")

@@ -1,29 +1,84 @@
 import { useState, useEffect } from 'react';
-import { CheckCircleIcon, PlayIcon, DocumentIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, PlayIcon, DocumentIcon, EyeIcon, ArrowDownTrayIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { useWizardStore } from '../../../store/wizardStore';
 import { toast } from 'sonner';
 import { projectsAPI } from '../../../services/api';
 import { api } from '../../../services/api';
+import { useAuth } from '../../../hooks/useAuth';
+import { useGenerationStore } from '../../../store/generation';
 
 export default function Step10Summary() {
   const { data, setGenerationComplete, clearData, isGenerationComplete } = useWizardStore();
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const { isAuthenticated, loginAsGuest, isLoading: authLoading } = useAuth();
+  
   const [themeRecommendation, setThemeRecommendation] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number>(0);
-  const [currentStep, setCurrentStep] = useState<string>('');
-  const [generationResult, setGenerationResult] = useState<any>(null);
+  
+  // Use the generation store for tracking progress
+  const { 
+    isGenerating, 
+    progress, 
+    currentStep, 
+    error,
+    result: generationResult,
+    startGeneration,
+    setError,
+    reset: resetGeneration
+  } = useGenerationStore();
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [isCreatingProject, setIsCreatingProject] = useState<boolean>(false);
   const [isLoadingTheme, setIsLoadingTheme] = useState<boolean>(false);
 
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log('🔍 Step10Summary state:', {
+      isGenerationComplete,
+      isGenerating,
+      hasGenerationResult: !!generationResult,
+      error,
+      progress,
+      currentStep
+    });
+  }, [isGenerationComplete, isGenerating, generationResult, error, progress, currentStep]);
+
+  // Ensure user is authenticated (create guest session if needed)
+  useEffect(() => {
+    const ensureAuthentication = async () => {
+      if (!authLoading && !isAuthenticated) {
+        try {
+          console.log('🔐 Creating guest session for website generation...');
+          await loginAsGuest();
+          console.log('✅ Guest session created successfully');
+        } catch (error) {
+          console.error('❌ Failed to create guest session:', error);
+          toast.error('Failed to initialize session. Please try again.');
+        }
+      }
+    };
+
+    ensureAuthentication();
+  }, [authLoading, isAuthenticated, loginAsGuest]);
   // Load theme recommendation on component mount
   useEffect(() => {
-    if (!isCreatingProject && !projectId && !themeRecommendation) {
+    if (!projectId && !themeRecommendation && isAuthenticated) {
       loadThemeRecommendation();
     }
-  }, []); // Empty dependency array to run only once
+  }, [isAuthenticated]);
+  // Update wizard completion status when generation completes
+  useEffect(() => {
+    if (!isGenerating && generationResult && !error) {
+      setGenerationComplete(true);
+      toast.success('Website generated successfully!');
+    }
+  }, [isGenerating, generationResult, error, setGenerationComplete]);
+
+  // Reset generation completion state if there's no valid generation result
+  // This prevents showing the completion page from persisted state without actual generation
+  useEffect(() => {
+    if (isGenerationComplete && !generationResult && !isGenerating) {
+      console.log('🔧 Resetting generation completion state - no valid result found');
+      setGenerationComplete(false);
+      resetGeneration();
+    }
+  }, [isGenerationComplete, generationResult, isGenerating, setGenerationComplete, resetGeneration]);
 
   // Enhanced theme recommendation loading that tries wizard-first approach
   const loadThemeRecommendation = async () => {
@@ -247,10 +302,9 @@ export default function Step10Summary() {
       });
     }
 
-    if (data.locationInfo) {
-      summary.push({
+    if (data.locationInfo) {      summary.push({
         title: 'Business Location',
-        content: data.locationInfo.type === 'online' ?
+        content: data.locationInfo.isOnlineOnly === true ?
           'Online Business' :
           data.locationInfo.address ? data.locationInfo.address : 'Physical Location'
       });
@@ -288,117 +342,41 @@ export default function Step10Summary() {
 
     return summary;
   };
-
-  // ✅ FIXED: Enhanced polling with better error handling and corrected logic
-  const pollGenerationStatus = async (generationId: string) => {
-    const maxAttempts = 120; // 10 minutes at 5-second intervals
-    let attempts = 0;
-
-    const poll = async () => {
-      attempts++;
-      console.log(`📊 Polling attempt ${attempts}/${maxAttempts} for generation:`, generationId);
-
-      try {
-        const statusResponse = await api.get(`/generations/${generationId}/status`) as any;
-        
-        // ✅ FIXED: Handle response structure properly
-        const statusData = statusResponse?.data?.data || statusResponse?.data;
-        
-        console.log('📈 Generation status response:', statusResponse);
-        console.log('📈 Generation status data:', statusData);
-
-        if (!statusData) {
-          throw new Error('Invalid status response structure');
-        }
-
-        const status = statusData.status;
-        const progressValue = statusData.progress || (progress < 90 ? progress + 5 : progress);
-        const stepMessage = statusData.currentStep || 'Processing...';
-
-        // Update UI
-        setProgress(progressValue);
-        setCurrentStep(stepMessage);
-
-        if (status === 'COMPLETED') {
-          console.log('🎉 Generation completed successfully');
-          setGenerationResult({
-            previewUrl: statusData.previewUrl || statusData.siteUrl,
-            downloadUrl: statusData.downloadUrl || statusData.siteUrl,
-            content: statusData.content
-          });
-          setProgress(100);
-          setCurrentStep('Website generation completed!');
-          setGenerationComplete(true);
-          setIsGenerating(false);
-          toast.success('Website generated successfully!');
-          return;
-        }
-
-        if (status === 'FAILED') {
-          console.log('❌ Generation failed');
-          const errorMessage = statusData.errorLog || statusData.error || 'Website generation failed. Please try again.';
-          setError(errorMessage);
-          setIsGenerating(false);
-          return;
-        }
-
-        // ✅ FIXED: Handle all in-progress states
-        if (['PENDING', 'INITIALIZING', 'BUILDING_STRUCTURE', 'APPLYING_THEME', 'GENERATING_CONTENT', 'BUILDING_SITE', 'PACKAGING'].includes(status)) {
-          if (attempts < maxAttempts) {
-            setTimeout(poll, 5000); // Poll every 5 seconds
-          } else {
-            setError('Generation is taking longer than expected. Please check back later.');
-            setIsGenerating(false);
-          }
-          return;
-        }
-
-        // Unknown status
-        console.warn('⚠️ Unknown generation status:', status);
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 5000);
-        } else {
-          setError('Generation status is unclear. Please refresh the page.');
-          setIsGenerating(false);
-        }
-
-      } catch (error: any) {
-        console.error('❌ Status polling failed:', error);
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 5000);
-        } else {
-          setError('Failed to get generation status. Please refresh the page.');
-          setIsGenerating(false);
-        }
-      }
-    };
-
-    poll();
-  };
-
-  // ✅ FIXED: Main generation function with improved error handling
+  // ✅ Main generation function with improved error handling
   const handleGenerateWebsite = async () => {
+    console.log('🎯 [DEBUG] handleGenerateWebsite called');
+    console.log('🎯 [DEBUG] Current data state:', JSON.stringify(data, null, 2));
+    console.log('🎯 [DEBUG] Current projectId:', projectId);
+    console.log('🎯 [DEBUG] Theme recommendation:', themeRecommendation);
+    
+    // Check authentication first
+    if (!isAuthenticated) {
+      toast.error('Please wait for authentication to complete');
+      return;
+    }
+    
     try {
-      setIsGenerating(true);
-      setError(null);
-      setProgress(0);
-      setCurrentStep('Initializing...');
-
+      // Reset the generation store
+      resetGeneration();
       console.log('🚀 Starting generation process...');
-
+      
       // STEP 1: Validate wizard data before proceeding
+      console.log('🔍 [DEBUG] Starting data validation...');
+      
       if (!validateWizardData(data)) {
+        console.error('❌ [DEBUG] Data validation failed');
+        console.log('🔍 [DEBUG] Current data for validation:', JSON.stringify(data, null, 2));
         throw new Error('Please complete all wizard steps before proceeding');
       }
+      
+      console.log('✅ [DEBUG] Data validation passed');
 
       // STEP 2: Try to find existing project first
       console.log('🔍 Checking for existing projects...');
-      setCurrentStep('Checking for existing projects...');
-      setProgress(5);
 
       let currentProjectId = projectId;
       let project = null;
-
+      
       // Try to find existing project first
       if (!currentProjectId) {
         currentProjectId = await findExistingProject();
@@ -409,12 +387,16 @@ export default function Step10Summary() {
       }
 
       // STEP 3: Get or create project
+      console.log('🏢 [DEBUG] Starting project resolution...');
+      console.log('🏢 [DEBUG] Current projectId:', currentProjectId);
+      
       if (currentProjectId) {
         try {
           console.log('🔍 Fetching existing project:', currentProjectId);
           const projectResponse = await api.get(`/projects/${currentProjectId}`) as any;
           project = projectResponse.data?.data || projectResponse.data;
           console.log('✅ Found existing project:', project?.id);
+          
         } catch (projectError: any) {
           console.warn('❌ Could not fetch existing project, will create new one:', projectError.message);
           currentProjectId = null;
@@ -423,9 +405,6 @@ export default function Step10Summary() {
 
       // STEP 4: Create project if needed
       if (!currentProjectId) {
-        setCurrentStep('Creating project...');
-        setProgress(10);
-
         try {
           currentProjectId = await createProjectWithRetry();
           setProjectId(currentProjectId);
@@ -441,24 +420,17 @@ export default function Step10Summary() {
         }
       }
 
-      setProgress(25);
-      setCurrentStep('Project ready');
-
       // STEP 5: Force project completion
       console.log('🔧 Forcing project completion...');
-      setCurrentStep('Completing project setup...');
-      setProgress(30);
 
       try {
         console.log('🔧 Calling project completion endpoint...');
-        const completeResponse = await api.post(`/projects/${currentProjectId}/complete`);
-        console.log('✅ Project completion endpoint called successfully');
+        const completeResponse = await api.post(`/projects/${currentProjectId}/complete`) as any;
+        console.log('✅ Project marked as complete:', completeResponse.data);
 
         // Re-fetch the project to confirm completion
         console.log('🔍 Re-fetching project to verify completion...');
         const updatedProjectResponse = await api.get(`/projects/${currentProjectId}`) as any;
-
-        // Handle response structure properly
         project = updatedProjectResponse.data?.data || updatedProjectResponse.data || updatedProjectResponse;
 
         console.log('🔍 Project after completion:', {
@@ -481,78 +453,59 @@ export default function Step10Summary() {
         console.log('⚠️ Proceeding with generation despite completion error...');
       }
 
-      setProgress(35);
-      setCurrentStep('Starting website generation...');
-
       // STEP 6: Start the generation process
       console.log('🎬 Starting generation for project:', currentProjectId);
       console.log('🎯 Proceeding with generation...');
 
-      try {
-        const generatePayload = {
-          hugoTheme: themeRecommendation?.recommendedTheme || 'ananke',
-          customizations: {
-            colors: data.themeConfig?.colorScheme || {
-              name: 'Default',
-              primary: '#3b82f6',
-              secondary: '#1e40af',
-              accent: '#60a5fa',
-              background: '#ffffff',
-              text: '#1f2937'
-            },
-            fonts: data.themeConfig?.typography || {
-              headingFont: 'Inter',
-              bodyFont: 'Inter',
-              fontSize: 'medium'
-            },
-            layout: data.themeConfig?.layout || {
-              headerStyle: 'standard',
-              footerStyle: 'standard',
-              sidebarEnabled: false
-            }
-          },
-          contentOptions: {
-            generateSampleContent: true,
-            contentTone: 'professional',
-            includeImages: true,
-            seoOptimized: true
-          }
-        };
-
-        console.log('📤 Generation payload:', generatePayload);
-
-        const generateResponse = await api.post(`/generations/${currentProjectId}/start`, generatePayload) as any;
-
-        console.log('🎯 Generation response:', generateResponse);
-
-        // ✅ FIXED: Check response structure properly
-        if (!generateResponse.data?.success && !generateResponse.success) {
-          const errorMessage = generateResponse.data?.error?.message || 
-                              generateResponse.error?.message || 
-                              'Failed to start generation';
-          throw new Error(errorMessage);
-        }
-
-        // ✅ FIXED: Extract generation ID correctly
-        const generationId = generateResponse.data?.data?.generationId || 
-                            generateResponse.data?.generationId ||
-                            generateResponse.generationId;
-
-        if (!generationId) {
-          console.error('❌ No generation ID in response:', generateResponse);
-          throw new Error('No generation ID received from server');
-        }
-
-        console.log('📝 Generation ID:', generationId);
-
-        setProgress(40);
-        setCurrentStep('Generation started, monitoring progress...');
-
-        // STEP 7: Poll for completion
-        await pollGenerationStatus(generationId);
-
+      // Use the Generation store to start and monitor the generation
+      try {        // Start generation with the GenerationStore
+        await startGeneration(currentProjectId, data);
+        
+        // The status will be automatically tracked by the store
+        // and updates will be reflected in the UI through the
+        // store's progress and currentStep values
+        
+        console.log('📝 Generation started successfully');
+        
+        // Generation is now running and status is tracked by the store
+        // The UI should automatically update as progress is made
+        // Wizard completion will be handled by the useEffect when generation finishes
       } catch (generationError: any) {
+        console.log('🚨 [DEBUG] ===== GENERATION ERROR CAUGHT =====');
         console.error('❌ Generation start failed:', generationError);
+        console.log('🚨 [DEBUG] Error type:', typeof generationError);
+        console.log('🚨 [DEBUG] Error constructor:', generationError.constructor?.name);
+        console.log('🚨 [DEBUG] Error message:', generationError.message);
+        console.log('🚨 [DEBUG] Error stack:', generationError.stack);
+        
+        // Deep dive into response error
+        if (generationError.response) {
+          console.log('🚨 [DEBUG] Response exists');
+          console.log('🚨 [DEBUG] Response status:', generationError.response.status);
+          console.log('🚨 [DEBUG] Response statusText:', generationError.response.statusText);
+          console.log('🚨 [DEBUG] Response headers:', generationError.response.headers);
+          console.log('🚨 [DEBUG] Response data:', generationError.response.data);
+          console.log('🚨 [DEBUG] Response data type:', typeof generationError.response.data);
+          
+          if (generationError.response.data) {
+            console.log('🚨 [DEBUG] Response data keys:', Object.keys(generationError.response.data));
+          }
+        } else {
+          console.log('🚨 [DEBUG] No response object in error');
+        }
+        
+        // Check for network/connection errors
+        if (generationError.code) {
+          console.log('🚨 [DEBUG] Error code:', generationError.code);
+        }
+        
+        if (generationError.config) {
+          console.log('🚨 [DEBUG] Request config URL:', generationError.config.url);
+          console.log('🚨 [DEBUG] Request config method:', generationError.config.method);
+          console.log('🚨 [DEBUG] Request config baseURL:', generationError.config.baseURL);
+          console.log('🚨 [DEBUG] Request config timeout:', generationError.config.timeout);
+        }
+
         console.error('❌ Generation error response:', generationError.response?.data);
 
         // Log the specific error details for debugging
@@ -564,34 +517,72 @@ export default function Step10Summary() {
           });
         }
 
-        throw new Error(
-          generationError.response?.data?.error?.message ||
+        const errorMessage = generationError.response?.data?.error?.message ||
           generationError.message ||
-          'Failed to start website generation'
-        );
-      }
+          'Failed to start website generation';
+          
+        console.log('🚨 [DEBUG] Final error message to throw:', errorMessage);
 
+        throw new Error(errorMessage);
+      }
     } catch (error: any) {
+      console.log('🚨 [DEBUG] ===== OUTER CATCH BLOCK =====');
       console.error('❌ Generation failed:', error);
-      setError(error.message || 'Website generation failed');
-      setIsGenerating(false);
+      
+      const finalErrorMessage = error.message || 'Website generation failed';
+      console.log('🚨 [DEBUG] Final error message for UI:', finalErrorMessage);
+      
+      // Set error in generation store
+      setError(finalErrorMessage);
+      
+      // Also show toast for immediate user feedback
+      toast.error(`Generation failed: ${finalErrorMessage}`);
     }
   };
 
   const handleGenerateClick = () => {
     handleGenerateWebsite();
   };
-
   const handleStartOver = () => {
+    console.log('🔄 Starting over - resetting all state');
     clearData();
+    resetGeneration();
     setProjectId(null); // Clear cached project ID
     setThemeRecommendation(null); // Clear theme recommendation
   };
 
   const summary = getWizardSummary();
-
   return (
     <div className="space-y-8">
+      {/* Debug Panel - Only show in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <details className="cursor-pointer">
+            <summary className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+              🐛 Debug Info (Development Only)
+            </summary>
+            <div className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
+              <p><strong>Wizard Complete:</strong> {isGenerationComplete ? '✅' : '❌'}</p>
+              <p><strong>Is Generating:</strong> {isGenerating ? '🔄' : '❌'}</p>
+              <p><strong>Has Result:</strong> {generationResult ? '✅' : '❌'}</p>
+              <p><strong>Error:</strong> {error || 'None'}</p>
+              <p><strong>Progress:</strong> {progress}%</p>
+              <p><strong>Current Step:</strong> {currentStep || 'None'}</p>
+              <button
+                onClick={() => {
+                  console.log('🔧 Manual reset triggered');
+                  setGenerationComplete(false);
+                  resetGeneration();
+                }}
+                className="mt-2 px-3 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700"
+              >
+                Reset State
+              </button>
+            </div>
+          </details>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center">
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
@@ -605,7 +596,8 @@ export default function Step10Summary() {
         </p>
       </div>
 
-      {!isGenerationComplete && (
+      {/* Show generation form if not completed or no valid result */}
+      {(!isGenerationComplete || !generationResult) && (
         <>
           {/* Configuration Summary */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -751,10 +743,8 @@ export default function Step10Summary() {
             </div>
           </div>
         </>
-      )}
-
-      {/* Generation Complete */}
-      {isGenerationComplete && (
+      )}      {/* Generation Complete - Only show if we have actual generation results */}
+      {isGenerationComplete && generationResult && (
         <div className="space-y-6">
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
             <div className="flex items-center space-x-4">
@@ -783,10 +773,10 @@ export default function Step10Summary() {
               </div>
               <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                 Download the complete Hugo website as a ZIP file. Contains all source files, content, and assets.
-              </p>
-              <button
+              </p>              <button
                 onClick={() => generationResult?.downloadUrl && window.open(generationResult.downloadUrl, '_blank')}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                disabled={!generationResult?.downloadUrl}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
               >
                 Download ZIP File
               </button>
@@ -801,10 +791,10 @@ export default function Step10Summary() {
               </div>
               <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                 View a live preview of your generated website before downloading or deploying.
-              </p>
-              <button
+              </p>              <button
                 onClick={() => generationResult?.previewUrl && window.open(generationResult.previewUrl, '_blank')}
-                className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+                disabled={!generationResult?.previewUrl}
+                className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white font-medium rounded-lg transition-colors"
               >
                 Preview Site
               </button>

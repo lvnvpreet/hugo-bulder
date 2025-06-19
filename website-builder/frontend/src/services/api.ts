@@ -11,9 +11,8 @@ const RETRY_ATTEMPTS = parseInt(import.meta.env.VITE_API_RETRY_ATTEMPTS || '3')
 const RETRY_DELAY = parseInt(import.meta.env.VITE_API_RETRY_DELAY || '1000')
 const HEALTH_CHECK_INTERVAL = parseInt(import.meta.env.VITE_HEALTH_CHECK_INTERVAL || '30000')
 
-// Development logging flag
-const ENABLE_LOGGING = import.meta.env.VITE_ENABLE_API_LOGGING === 'true' || 
-                      import.meta.env.DEV
+// Development logging flag - always enable for debugging
+const ENABLE_LOGGING = true // Force enable logging to debug issues
 
 console.log('🔧 API Configuration:', {
   API_BASE_URL,
@@ -22,7 +21,9 @@ console.log('🔧 API Configuration:', {
   HUGO_GENERATOR_URL,
   API_TIMEOUT,
   RETRY_ATTEMPTS,
-  ENABLE_LOGGING
+  ENABLE_LOGGING,
+  NODE_ENV: import.meta.env.MODE,
+  VITE_ENABLE_API_LOGGING: import.meta.env.VITE_ENABLE_API_LOGGING
 })
 
 // Enhanced Service Health Status
@@ -165,7 +166,7 @@ const checkServiceHealth = async (
     }
     
     const response = await axios.get(healthUrl, { 
-      timeout: 5000,
+      timeout: 50000,
       validateStatus: (status) => status < 500 // Accept 4xx as "reachable"
     })
     

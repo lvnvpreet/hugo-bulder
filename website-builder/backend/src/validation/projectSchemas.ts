@@ -131,7 +131,7 @@ const projectSchemas = {
   projectId: Joi.object({
     id: Joi.string()
       .min(20)
-      .max(30)
+      .max(40)
       .required()
       .messages({
         'string.min': 'Invalid project ID format',
@@ -143,7 +143,7 @@ const projectSchemas = {
   projectIdParam: Joi.object({
     projectId: Joi.string()
       .min(20)
-      .max(30)
+      .max(40)
       .required()
       .messages({
         'string.min': 'Invalid project ID format',
@@ -427,12 +427,11 @@ const projectSchemas = {
     notes: Joi.string().trim().max(500).optional(),
     readyForGeneration: Joi.boolean().optional()
   }),
-
   // Health route project ID parameter validation
   healthProjectId: Joi.object({
     projectId: Joi.string()
       .min(20)
-      .max(30)
+      .max(40)
       .required()
       .messages({
         'string.min': 'Invalid project ID format',
