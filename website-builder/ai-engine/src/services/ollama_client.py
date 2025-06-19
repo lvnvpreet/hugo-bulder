@@ -27,14 +27,13 @@ class OllamaClient:
         # Ensure URL has protocol
         if not self.base_url.startswith(('http://', 'https://')):
             self.base_url = f"http://{self.base_url}"
-        
-        # Create HTTP client with proper configuration
+          # Create HTTP client with proper configuration
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,
+                connect=30.0,  # Increased from 10.0 to 30.0 seconds
                 read=float(settings.OLLAMA_TIMEOUT),
-                write=30.0,
-                pool=10.0
+                write=120.0,  # Increased from 30.0 to 120.0 seconds  
+                pool=30.0     # Increased from 10.0 to 30.0 seconds
             ),
             limits=httpx.Limits(
                 max_connections=10,
@@ -127,15 +126,14 @@ class OllamaClient:
     
     async def health_check(self) -> bool:
         """Check if Ollama service is healthy with caching"""
-        
-        # Use cached result if recent (30 seconds)
+          # Use cached result if recent (30 seconds)
         if (self._last_health_check and 
             datetime.now() - self._last_health_check < timedelta(seconds=30)):
             return self._health_status
         
         try:
             # Use /api/tags endpoint to check service health
-            await self._make_request("/api/tags", method="GET", timeout=10.0)
+            await self._make_request("/api/tags", method="GET", timeout=30.0)  # Increased from 10.0 to 30.0 seconds
             self._health_status = True
             self._last_health_check = datetime.now()
             
@@ -173,8 +171,7 @@ class OllamaClient:
         """Check if a specific model is available"""
         
         models = await self.get_available_models()
-        return model_name in [model['name'] for model in models]
-    
+        return model_name in [model['name'] for model in models]    
     async def pull_model(self, model_name: str) -> bool:
         """Pull a model from Ollama registry"""
         
@@ -182,7 +179,7 @@ class OllamaClient:
             logger.info(f"Pulling model: {model_name}")
             
             data = {"name": model_name}
-            response = await self._make_request("/api/pull", data=data, timeout=600.0)
+            response = await self._make_request("/api/pull", data=data, timeout=1800.0)  # Increased from 600.0 to 1800.0 seconds (30 minutes)
             
             logger.info(f"Successfully pulled model: {model_name}")
             

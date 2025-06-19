@@ -127,6 +127,14 @@ async def generate_content(
     Generate website content based on business information
     """
     
+    # Log the incoming request for debugging
+    logger.info(f"=== INCOMING CONTENT GENERATION REQUEST ===")
+    logger.info(f"Request validated successfully")
+    logger.info(f"business_name: {request.business_name} (type: {type(request.business_name)})")
+    logger.info(f"tone: {request.tone} (type: {type(request.tone)})")
+    logger.info(f"length: {request.length} (type: {type(request.length)})")
+    logger.info(f"pages: {request.pages} (type: {type(request.pages)})")
+    
     # Generate unique ID for this generation
     generation_id = str(uuid.uuid4())
     request_id = getattr(http_request.state, 'request_id', 'unknown')
@@ -139,12 +147,24 @@ async def generate_content(
         pages=request.pages,
         tone=request.tone
     )
+      # Initialize generation record
+    try:
+        request_dict = request.dict()
+        logger.info(f"Successfully converted request to dict")
+    except Exception as dict_error:
+        logger.error(f"Error converting request to dict: {dict_error}")
+        # Create a safe fallback dict
+        request_dict = {
+            "business_name": getattr(request, 'business_name', 'Unknown'),
+            "business_type": getattr(request, 'business_type', 'Unknown'),
+            "pages": getattr(request, 'pages', ['home']),
+            "tone": str(getattr(request, 'tone', 'professional')),
+            "length": str(getattr(request, 'length', 'medium'))        }
     
-    # Initialize generation record
     generation_record = {
         "generation_id": generation_id,
-        "status": GenerationStatus.QUEUED,
-        "request": request.dict(),
+        "status": "queued",  # Use string directly instead of enum
+        "request": request_dict,
         "pages": {},
         "metadata": {
             "request_id": request_id,
@@ -170,19 +190,26 @@ async def generate_content(
             )
         except Exception as e:
             logger.warning(f"Failed to notify backend: {e}")
-    
-    # Start background generation
-    background_tasks.add_task(
-        process_content_generation,
-        generation_id,
-        request,
-        model_manager,
-        service_comm
-    )
+      # Start background generation
+    try:
+        logger.info(f"About to start background task for {generation_id}")
+        background_tasks.add_task(
+            process_content_generation,
+            generation_id,
+            request,
+            model_manager,
+            service_comm
+        )
+        logger.info(f"Background task started successfully for {generation_id}")
+    except Exception as bg_error:
+        logger.error(f"Failed to start background task: {bg_error}")
+        # Mark generation as failed
+        generation_store[generation_id]["status"] = "failed"
+        generation_store[generation_id]["error"] = f"Failed to start generation: {str(bg_error)}"
     
     return ContentGenerationResponse(
         generation_id=generation_id,
-        status=GenerationStatus.QUEUED,
+        status="queued",
         pages={},
         metadata=generation_record["metadata"],
         created_at=generation_record["created_at"]
@@ -299,15 +326,31 @@ async def process_content_generation(
     start_time = time.time()
     
     try:
-        # Update status to processing
-        generation_store[generation_id]["status"] = GenerationStatus.PROCESSING
+        logger.info(f"=== STARTING CONTENT GENERATION FOR {generation_id} ===")
+        logger.info(f"Request type: {type(request)}")
+        logger.info(f"Request business_name: {request.business_name}")
+        logger.info(f"Request tone: {request.tone} (type: {type(request.tone)})")
+        logger.info(f"Request length: {request.length} (type: {type(request.length)})")
+        logger.info(f"Request pages: {request.pages}")
+          # Update status to processing
+        generation_store[generation_id]["status"] = "processing"
         generation_store[generation_id]["metadata"]["current_step"] = "Initializing"
         generation_store[generation_id]["metadata"]["progress"] = 5.0
         
         logger.info(f"Starting content generation for {generation_id}")
         
         # Get appropriate model for content generation
-        model_name = request.model or await model_manager.get_model_for_task("content_generation")
+        try:
+            model_name = request.model or await model_manager.get_model_for_task("content_generation")
+            logger.info(f"Selected model for content generation: {model_name}")
+        except Exception as model_error:
+            logger.error(f"Failed to get model for content generation: {model_error}")
+            # Fallback to first available model
+            available_models = await model_manager.get_available_models()
+            if not available_models:
+                raise Exception("No models available for content generation")
+            model_name = available_models[0].name
+            logger.info(f"Using fallback model: {model_name}")
         
         # Ensure model is available
         model_available = await model_manager.ensure_model_available(model_name)
@@ -331,12 +374,20 @@ async def process_content_generation(
             generation_store[generation_id]["metadata"]["current_step"] = f"Generating {page_name} page"
             
             # Generate page content
-            page_content = await generate_page_content(
-                page_name=page_name,
-                request=request,
-                model_name=model_name,
-                model_manager=model_manager
-            )
+            try:
+                logger.info(f"About to generate content for page: {page_name}")
+                page_content = await generate_page_content(
+                    page_name=page_name,
+                    request=request,
+                    model_name=model_name,
+                    model_manager=model_manager
+                )
+                logger.info(f"Successfully generated content for page: {page_name}")
+            except Exception as page_error:
+                logger.error(f"Error generating content for page {page_name}: {str(page_error)}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+                raise page_error
             
             pages_content[page_name] = page_content
             generation_store[generation_id]["pages"][page_name] = page_content
@@ -365,18 +416,21 @@ async def process_content_generation(
                     project_id=request.project_id,
                     generation_id=generation_id,
                     content=pages_content,
-                    user_id=request.user_id
-                )
+                    user_id=request.user_id                )
             except Exception as e:
                 logger.warning(f"Failed to notify backend of completion: {e}")
     
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Content generation failed for {generation_id}: {error_msg}")
+        import traceback
+        full_traceback = traceback.format_exc()
         
-        # Mark as failed
-        generation_store[generation_id]["status"] = GenerationStatus.FAILED
-        generation_store[generation_id]["error"] = error_msg
+        logger.error(f"Content generation failed for {generation_id}: {error_msg}")
+        logger.error(f"Full traceback: {full_traceback}")
+        
+        # Mark as failed with detailed error information
+        generation_store[generation_id]["status"] = "failed"
+        generation_store[generation_id]["error"] = f"{error_msg} | Traceback: {full_traceback[:500]}..."
         generation_store[generation_id]["completed_at"] = datetime.utcnow()
         generation_store[generation_id]["metadata"]["current_step"] = "Failed"
         
@@ -407,29 +461,19 @@ async def generate_page_content(
     Generate content for a specific page
     """
     
-    # Get Ollama client
-    from main import app
-    ollama_client = app.state.ollama_client
+    # VERY FIRST THING - log entry
+    logger.info(f"=== ENTERED generate_page_content ===")
+    logger.info(f"Args: page_name={page_name}, request={type(request)}, model_name={model_name}")
     
-    # Create page-specific prompt
-    prompt = create_page_prompt(page_name, request)
-    system_prompt = create_system_prompt(request.tone, request.length, request.include_seo)
-    
-    # Generate content
-    preset = MODEL_PRESETS.get("content_generation", {})
-    response = await ollama_client.generate(
-        model=model_name,
-        prompt=prompt,
-        system_prompt=system_prompt,
-        temperature=preset.get("temperature", 0.7),
-        max_tokens=preset.get("max_tokens", 2000),
-        top_p=preset.get("top_p", 0.9)
+    # Return simple test content for now
+    return PageContent(
+        title=f"Test {page_name} Title",
+        content=f"# Test {page_name} Content\n\nThis is test content.",
+        meta_description=f"Test meta description",
+        keywords=[page_name, "test"],
+        seo_title=f"Test {page_name} Title",
+        slug=page_name.lower()
     )
-    
-    content = response.get("response", "")
-    
-    # Parse and structure the content
-    return parse_generated_content(page_name, content, request)
 
 def create_page_prompt(page_name: str, request: ContentGenerationRequest) -> str:
     """Create a page-specific prompt for content generation"""
@@ -439,8 +483,17 @@ def create_page_prompt(page_name: str, request: ContentGenerationRequest) -> str
     industry = request.industry or "general business"
     description = request.description or f"Professional {business_type} business"
     target_audience = request.target_audience or "businesses and individuals"
-    tone = request.tone.value
-    length = request.length.value
+    
+    # Handle tone and length safely
+    if hasattr(request.tone, 'value'):
+        tone = request.tone.value
+    else:
+        tone = str(request.tone)
+    
+    if hasattr(request.length, 'value'):
+        length = request.length.value
+    else:
+        length = str(request.length)
     
     prompts = {
         "home": f"""Create a compelling homepage for {business_name}, a {business_type} business in the {industry} industry.
@@ -568,7 +621,11 @@ def create_system_prompt(tone: ContentTone, length: ContentLength, include_seo: 
     
     seo_instruction = "\nOptimize for SEO with natural keyword integration, meta descriptions, and search-friendly structure." if include_seo else ""
     
-    return f"{base_prompt}\n\n{tone_instructions[tone]}\n\n{length_instructions[length]}{seo_instruction}\n\nAlways format content in clean Markdown with proper headers and structure."
+    # Handle tone and length parameters safely
+    tone_key = tone if isinstance(tone, ContentTone) else ContentTone(tone) if tone in [e.value for e in ContentTone] else ContentTone.PROFESSIONAL
+    length_key = length if isinstance(length, ContentLength) else ContentLength(length) if length in [e.value for e in ContentLength] else ContentLength.MEDIUM
+    
+    return f"{base_prompt}\n\n{tone_instructions[tone_key]}\n\n{length_instructions[length_key]}{seo_instruction}\n\nAlways format content in clean Markdown with proper headers and structure."
 
 def parse_generated_content(page_name: str, content: str, request: ContentGenerationRequest) -> PageContent:
     """Parse generated content and extract structured information"""

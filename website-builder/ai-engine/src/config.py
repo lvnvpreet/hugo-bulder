@@ -16,11 +16,10 @@ class Settings(BaseSettings):
     PORT: int = Field(default=3002, env="PORT")
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     DEBUG: bool = Field(default=False, env="DEBUG")
-    
-    # Ollama Configuration
+      # Ollama Configuration
     OLLAMA_BASE_URL: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
     OLLAMA_HOST: str = Field(default="http://localhost:11434", env="OLLAMA_HOST")
-    OLLAMA_TIMEOUT: int = Field(default=300, env="OLLAMA_TIMEOUT")
+    OLLAMA_TIMEOUT: int = Field(default=900, env="OLLAMA_TIMEOUT")  # Increased from 300 to 900 seconds (15 minutes)
     OLLAMA_MAX_RETRIES: int = Field(default=3, env="OLLAMA_MAX_RETRIES")
     
     # Model Configuration
@@ -38,10 +37,9 @@ class Settings(BaseSettings):
     BACKEND_URL: str = Field(default="http://localhost:3001", env="BACKEND_URL")
     FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
     HUGO_GENERATOR_URL: str = Field(default="http://localhost:3003", env="HUGO_GENERATOR_URL")
-    
-    # Workflow Configuration
+      # Workflow Configuration
     MAX_CONCURRENT_WORKFLOWS: int = Field(default=5, env="MAX_CONCURRENT_WORKFLOWS")
-    WORKFLOW_TIMEOUT: int = Field(default=600, env="WORKFLOW_TIMEOUT")
+    WORKFLOW_TIMEOUT: int = Field(default=1200, env="WORKFLOW_TIMEOUT")  # Increased from 600 to 1200 seconds (20 minutes)
     ENABLE_BACKGROUND_TASKS: bool = Field(default=True, env="ENABLE_BACKGROUND_TASKS")
     
     # Health Check Configuration
@@ -51,9 +49,8 @@ class Settings(BaseSettings):
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
     LOG_FORMAT: str = Field(default="json", env="LOG_FORMAT")
-    
-    # Performance Configuration
-    REQUEST_TIMEOUT: int = Field(default=300, env="REQUEST_TIMEOUT")
+      # Performance Configuration
+    REQUEST_TIMEOUT: int = Field(default=900, env="REQUEST_TIMEOUT")  # Increased from 300 to 900 seconds (15 minutes)
     MAX_REQUEST_SIZE: int = Field(default=10485760, env="MAX_REQUEST_SIZE")
     
     # Security Configuration - Fixed to handle comma-separated string
