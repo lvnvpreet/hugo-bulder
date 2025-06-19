@@ -5,13 +5,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-      target: development
-    ports:
+      target: development    ports:
       - "3000:3000"
     environment:
       - NODE_ENV=development
       - VITE_API_URL=http://localhost:3001
       - CHOKIDAR_USEPOLLING=true
+      - VITE_API_TIMEOUT=1200000
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -26,11 +26,12 @@ services:
       target: development
     ports:
       - "3001:3001"
-      - "9229:9229"  # Debug port
-    environment:
+      - "9229:9229"  # Debug port    environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://website_builder:dev_password@postgres:5432/website_builder
       - JWT_SECRET=dev_jwt_secret_change_in_production
+      - AI_ENGINE_TIMEOUT=1200000
+      - SERVICE_COMMUNICATION_TIMEOUT=1200000
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -49,11 +50,12 @@ services:
       target: development
     ports:
       - "3002:3002"
-      - "5678:5678"  # Python debug port
-    environment:
+      - "5678:5678"  # Python debug port    environment:
       - PYTHONPATH=/app
       - OLLAMA_HOST=http://ollama:11434
       - LOG_LEVEL=debug
+      - OLLAMA_TIMEOUT=1200
+      - REQUEST_TIMEOUT=1200
     volumes:
       - ./ai-engine:/app
     command: uvicorn main:app --host 0.0.0.0 --port 3002 --reload

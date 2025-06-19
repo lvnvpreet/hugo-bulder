@@ -19,7 +19,7 @@ class Settings(BaseSettings):
       # Ollama Configuration
     OLLAMA_BASE_URL: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
     OLLAMA_HOST: str = Field(default="http://localhost:11434", env="OLLAMA_HOST")
-    OLLAMA_TIMEOUT: int = Field(default=900, env="OLLAMA_TIMEOUT")  # Increased from 300 to 900 seconds (15 minutes)
+    OLLAMA_TIMEOUT: int = Field(default=1200, env="OLLAMA_TIMEOUT")  # Increased to 1200 seconds (20 minutes)
     OLLAMA_MAX_RETRIES: int = Field(default=3, env="OLLAMA_MAX_RETRIES")
     
     # Model Configuration
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
     LOG_FORMAT: str = Field(default="json", env="LOG_FORMAT")
       # Performance Configuration
-    REQUEST_TIMEOUT: int = Field(default=900, env="REQUEST_TIMEOUT")  # Increased from 300 to 900 seconds (15 minutes)
+    REQUEST_TIMEOUT: int = Field(default=1200, env="REQUEST_TIMEOUT")  # Increased to 1200 seconds (20 minutes)
     MAX_REQUEST_SIZE: int = Field(default=10485760, env="MAX_REQUEST_SIZE")
     
     # Security Configuration - Fixed to handle comma-separated string

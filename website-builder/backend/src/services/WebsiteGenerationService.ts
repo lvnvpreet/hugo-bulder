@@ -577,11 +577,10 @@ export class WebsiteGenerationService {
       
       const generationId = startResponse.data.generation_id;
       console.log(`🎯 Content generation started with ID: ${generationId}`);
-      
-      // Now poll for completion
+        // Now poll for completion
       console.log('🔄 Polling for content generation completion...');
       let attempts = 0;
-      const maxAttempts = 150; // 5 minutes max (150 * 2 seconds)
+      const maxAttempts = 600; // 20 minutes max (600 * 2 seconds) - increased from 5 minutes
       let lastStatus = 'unknown';
       
       while (attempts < maxAttempts) {
@@ -646,7 +645,7 @@ export class WebsiteGenerationService {
         }
       }
       
-      throw new Error('AI content generation timed out after 5 minutes');
+      throw new Error('AI content generation timed out after 20 minutes');
         
     } catch (error) {
       console.error('❌ Ollama AI content generation failed:', error);

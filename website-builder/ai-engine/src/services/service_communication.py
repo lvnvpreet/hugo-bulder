@@ -24,10 +24,9 @@ class ServiceCommunication:
         self.frontend_url = settings.FRONTEND_URL.rstrip('/')
         
         # Create HTTP client with proper timeout and retries
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(
+        self.client = httpx.AsyncClient(            timeout=httpx.Timeout(
                 connect=10.0,
-                read=300.0,  # 5 minutes for long-running operations
+                read=1200.0,  # 20 minutes for long-running operations (increased from 5 minutes)
                 write=30.0,
                 pool=10.0
             ),
