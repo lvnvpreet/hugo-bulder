@@ -28,6 +28,7 @@ import referenceRoutes from './routes/reference';
 import generationRoutes from './routes/generations';
 import webhookRoutes from './routes/webhooks';
 import healthRoutes from './routes/health';
+import aiWebhookRoutes from './routes/ai-webhooks'; // <<<< NEW IMPORT
 
 // Import swagger configuration
 import { swaggerSpec } from './config/swagger';
@@ -283,14 +284,26 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
-// API routes
+// ===== API ROUTES =====
+
+// Public routes (no authentication required)
 app.use('/api/auth', authRoutes);
-// Now that auth middleware supports demo users, we can enable auth for projects
+
+// <<<< AI ENGINE WEBHOOK ROUTES (NO AUTH - Service-to-Service Communication)
+// IMPORTANT: These must come BEFORE the authenticated webhook routes
+// AI Engine will call these endpoints to notify backend of generation status
+app.use('/api/webhooks', aiWebhookRoutes);
+
+// Protected routes (require authentication)
 app.use('/api/projects', authMiddleware, projectRoutes);
 app.use('/api/assets', authMiddleware, assetRoutes);
 app.use('/api/reference', authMiddleware, referenceRoutes);
 app.use('/api/generations', authMiddleware, generationRoutes);
+
+// <<<< USER WEBHOOK MANAGEMENT ROUTES (WITH AUTH)
+// These handle user webhook registrations/management
 app.use('/api/webhooks', authMiddleware, webhookRoutes);
+
 app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/health', authMiddleware, healthRoutes);
 
@@ -338,13 +351,15 @@ app.get('/api/docs', (req, res) => {
     data: {
       title: 'Website Builder API',
       version: '1.0.0',
-      description: 'API for AI-powered website builder',      endpoints: {
+      description: 'API for AI-powered website builder',      
+      endpoints: {
         auth: '/api/auth',
         projects: '/api/projects',
         assets: '/api/assets',
         reference: '/api/reference',
         generations: '/api/generations',
         webhooks: '/api/webhooks',
+        'ai-webhooks': '/api/webhooks/ai-engine', // <<<< NEW ENDPOINT DOCUMENTATION
         ai: '/api/ai',
         health: '/health'
       },
