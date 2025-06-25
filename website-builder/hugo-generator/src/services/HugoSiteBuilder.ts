@@ -28,8 +28,7 @@ export class HugoSiteBuilder {
     this.contentGenerator = new ContentGenerator(this.hugoCLI);
     this.configManager = new ConfigurationManager();
     this.fileManager = new FileManager();
-    this.outputDir = path.join(process.cwd(), 'output');
-  }
+    this.outputDir = path.join(process.cwd(), 'output');  }
   
   // Main site building method
   async buildWebsite(request: {
@@ -42,6 +41,7 @@ export class HugoSiteBuilder {
   }): Promise<{
     success: boolean;
     siteUrl?: string;
+    sourceUrl?: string;
     buildLog: string[];
     buildTime: number;
     errors: string[];
@@ -84,8 +84,7 @@ export class HugoSiteBuilder {
         throw new Error('Configuration generation failed');
       }
       buildLog.push('Site configuration generated');
-      
-      // Step 4: Generate content files
+        // Step 4: Generate content files
       buildLog.push('Step 4: Generating content files...');
       const contentResult = await this.generateContent(
         siteDir,
@@ -99,6 +98,17 @@ export class HugoSiteBuilder {
         throw new Error('Content generation failed');
       }
       buildLog.push(`Generated ${contentResult.createdFiles.length} content files`);
+        // Log content tracking details
+      if (contentResult.contentTracking) {
+        buildLog.push('Content tracking details:');
+        contentResult.contentTracking.forEach((track: any) => {
+          const status = track.success ? '✅' : '❌';
+          buildLog.push(`  ${status} ${track.contentType}: ${track.size} bytes`);
+          if (track.error) {
+            buildLog.push(`    Error: ${track.error}`);
+          }
+        });
+      }
       
       // Step 5: Copy static assets
       buildLog.push('Step 5: Setting up static assets...');
@@ -113,11 +123,11 @@ export class HugoSiteBuilder {
         throw new Error('Hugo build failed');
       }
       buildLog.push(`Site built successfully in ${buildResult.buildTime}ms`);
-      
-      // Step 7: Package site for download
+        // Step 7: Package site for download
       buildLog.push('Step 7: Packaging site for download...');
       const packageResult = await this.packageSite(siteDir, request.projectId);
-      buildLog.push(`Site packaged: ${packageResult.downloadUrl}`);
+      buildLog.push(`Built site packaged: ${packageResult.downloadUrl}`);
+      buildLog.push(`Source code packaged: ${packageResult.sourceUrl}`);
       
       const totalTime = Date.now() - startTime;
       buildLog.push(`[${new Date().toISOString()}] Site generation completed in ${totalTime}ms`);
@@ -125,14 +135,18 @@ export class HugoSiteBuilder {
       return {
         success: true,
         siteUrl: packageResult.downloadUrl,
+        sourceUrl: packageResult.sourceUrl,
         buildLog,
         buildTime: totalTime,
-        errors,
-        metadata: {
+        errors,        metadata: {
           theme: request.themeConfig.name,
           contentFiles: contentResult.createdFiles.length,
+          contentTracking: contentResult.contentTracking || [],
           buildTime: buildResult.buildTime,
           packageSize: packageResult.fileSize,
+          sourceSize: packageResult.sourceSize,
+          builtFilename: packageResult.filename,
+          sourceFilename: packageResult.sourceFilename,
           hugoVersion: await this.hugoCLI.getHugoVersion()
         }
       };
@@ -250,21 +264,51 @@ export class HugoSiteBuilder {
       structure
     );
   }
-  
-  private async generateContent(
+    private async generateContent(
     siteDir: string,
     generatedContent: any,
     projectData: any,
     seoData: any,
     structure: any
   ): Promise<any> {
-    return await this.contentGenerator.generateAllContent(
-      siteDir,
-      generatedContent,
-      projectData,
-      seoData,
-      structure
-    );
+    console.log(`[CONTENT TRACKING] Starting content generation for site: ${siteDir}`);
+    console.log(`[CONTENT TRACKING] Generated content keys: ${Object.keys(generatedContent || {})}`);
+    
+    try {
+      // Enhanced content generation with detailed tracking
+      const result = await this.contentGenerator.generateAllContent(
+        siteDir,
+        generatedContent,
+        projectData,
+        seoData,
+        structure
+      );
+      
+      // Additional content validation and tracking
+      const contentDir = path.join(siteDir, 'content');
+      console.log(`[CONTENT TRACKING] Content directory: ${contentDir}`);
+      
+      if (await this.fileManager.exists(contentDir)) {
+        const contentFiles = await this.fileManager.readDir(contentDir);
+        console.log(`[CONTENT TRACKING] Content files created: ${contentFiles.length}`);
+        
+        // Log each content file with details
+        for (const file of contentFiles) {
+          const filePath = path.join(contentDir, file);
+          if (await this.fileManager.exists(filePath)) {
+            const stats = await this.fileManager.getStats(filePath);
+            console.log(`[CONTENT TRACKING] File: ${file} - Size: ${stats.size} bytes`);
+          }
+        }
+      } else {
+        console.warn(`[CONTENT TRACKING] WARNING: Content directory not found: ${contentDir}`);
+      }
+      
+      return result;
+    } catch (error: any) {
+      console.error(`[CONTENT TRACKING] Content generation failed: ${error.message}`);
+      throw error;
+    }
   }
     private async setupStaticAssets(siteDir: string, projectData: any): Promise<void> {
     try {
@@ -319,42 +363,88 @@ Sitemap: https://example.com/sitemap.xml`;
       throw new Error(`Hugo build failed: ${error.message}`);
     }
   }
-  
-  private async packageSite(siteDir: string, projectId: string): Promise<{
+    private async packageSite(siteDir: string, projectId: string): Promise<{
     downloadUrl: string;
+    sourceUrl: string;
     fileSize: number;
+    sourceSize: number;
     filename: string;
-  }> {    try {
+    sourceFilename: string;
+  }> {
+    try {
       const publicDir = path.join(siteDir, 'public');
       const packageDir = path.join(process.cwd(), 'packages');
       await this.fileManager.ensureDir(packageDir);
       
-      const filename = `website-${projectId}-${Date.now()}.zip`;
-      const zipPath = path.join(packageDir, filename);
+      const timestamp = Date.now();
+      const builtFilename = `website-built-${projectId}-${timestamp}.zip`;
+      const sourceFilename = `website-source-${projectId}-${timestamp}.zip`;
       
-      // Create ZIP file using archiver
+      const builtZipPath = path.join(packageDir, builtFilename);
+      const sourceZipPath = path.join(packageDir, sourceFilename);
+      
+      // Create archiver instances
       const archiver = require('archiver');
-      const output = require('fs').createWriteStream(zipPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      const fs = require('fs');
       
-      archive.pipe(output);
-      archive.directory(publicDir, false);
-        await new Promise<void>((resolve, reject) => {
-        output.on('close', () => resolve());
-        archive.on('error', reject);
-        archive.finalize();
+      // Package 1: Built site (public directory)
+      console.log(`[PACKAGING] Creating built site package: ${builtFilename}`);
+      const builtOutput = fs.createWriteStream(builtZipPath);
+      const builtArchive = archiver('zip', { zlib: { level: 9 } });
+      
+      builtArchive.pipe(builtOutput);
+      builtArchive.directory(publicDir, false);
+      
+      await new Promise<void>((resolve, reject) => {
+        builtOutput.on('close', () => resolve());
+        builtArchive.on('error', reject);
+        builtArchive.finalize();
       });
       
-      // Get file size
-      const stats = await this.fileManager.getStats(zipPath);
+      // Package 2: Full Hugo source code
+      console.log(`[PACKAGING] Creating source code package: ${sourceFilename}`);
+      const sourceOutput = fs.createWriteStream(sourceZipPath);
+      const sourceArchive = archiver('zip', { zlib: { level: 9 } });
       
-      // Generate download URL (relative to packages directory)
-      const downloadUrl = `/packages/${filename}`;
+      sourceArchive.pipe(sourceOutput);
+      
+      // Add all Hugo source files except node_modules and .git
+      sourceArchive.glob('**/*', {
+        cwd: siteDir,
+        ignore: [
+          'node_modules/**',
+          '.git/**',
+          '.gitignore',
+          'public/**', // Exclude built files from source package
+          'resources/_gen/**', // Exclude Hugo generated resources
+          '.hugo_build.lock'
+        ]
+      });
+      
+      await new Promise<void>((resolve, reject) => {
+        sourceOutput.on('close', () => resolve());
+        sourceArchive.on('error', reject);
+        sourceArchive.finalize();
+      });
+      
+      // Get file sizes
+      const builtStats = await this.fileManager.getStats(builtZipPath);
+      const sourceStats = await this.fileManager.getStats(sourceZipPath);
+      
+      // Generate download URLs
+      const downloadUrl = `/packages/${builtFilename}`;
+      const sourceUrl = `/packages/${sourceFilename}`;
+      
+      console.log(`[PACKAGING] Built site package: ${builtStats.size} bytes`);
+      console.log(`[PACKAGING] Source code package: ${sourceStats.size} bytes`);
       
       return {
         downloadUrl,
-        fileSize: stats.size,
-        filename
+        sourceUrl,
+        fileSize: builtStats.size,
+        sourceSize: sourceStats.size,
+        filename: builtFilename,
+        sourceFilename
       };
       
     } catch (error: any) {

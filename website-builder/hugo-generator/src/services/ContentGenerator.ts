@@ -3,16 +3,76 @@ import * as yaml from 'js-yaml';
 import { HugoCLI } from './HugoCLI';
 import { FileManager } from '../utils/FileManager';
 
+// Content tracking interface for debugging content placement
+interface ContentTrackingInfo {
+  filePath: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+  frontMatter: any;
+  success: boolean;
+  error?: string;
+}
+
 export class ContentGenerator {
   private hugoCLI: HugoCLI;
   private fileManager: FileManager;
+  // Add content tracking
+  private contentTracker: ContentTrackingInfo[] = [];
   
   constructor(hugoCLI: HugoCLI) {
     this.hugoCLI = hugoCLI;
     this.fileManager = new FileManager();
   }
-  
-  // Main content generation method
+
+  // Get content tracking information for debugging
+  getContentTrackingInfo(): ContentTrackingInfo[] {
+    return [...this.contentTracker];
+  }
+
+  // Reset content tracking for new generation
+  resetContentTracking(): void {
+    this.contentTracker = [];
+  }
+
+  // Track content creation with detailed logging
+  private async trackContent(
+    filePath: string, 
+    contentType: string, 
+    frontMatter: any, 
+    success: boolean, 
+    error?: string
+  ): Promise<void> {
+    try {
+      const stats = await this.fileManager.exists(filePath) 
+        ? await this.fileManager.getStats(filePath)
+        : null;
+      
+      const trackingInfo: ContentTrackingInfo = {
+        filePath,
+        contentType,
+        size: stats?.size || 0,
+        createdAt: new Date().toISOString(),
+        frontMatter,
+        success,
+        error
+      };
+      
+      this.contentTracker.push(trackingInfo);
+      
+      const status = success ? '✅ SUCCESS' : '❌ FAILED';
+      console.log(`📝 Content tracked: ${contentType} -> ${filePath} (${status})`);
+      if (error) {
+        console.error(`   Error: ${error}`);
+      }
+      if (stats) {
+        console.log(`   Size: ${stats.size} bytes`);
+      }
+    } catch (trackError: any) {
+      console.warn(`Warning: Could not track content: ${trackError.message}`);
+    }
+  }
+    // Main content generation method with enhanced tracking
   async generateAllContent(
     siteDir: string,
     generatedContent: any,
@@ -23,81 +83,174 @@ export class ContentGenerator {
     success: boolean;
     createdFiles: string[];
     errors: string[];
+    contentTracking: ContentTrackingInfo[];
   }> {
     try {
+      // Reset tracking for new generation
+      this.resetContentTracking();
+      
       const createdFiles: string[] = [];
       const errors: string[] = [];
       
-      console.log('Starting content generation...');
+      console.log('🚀 Starting content generation with enhanced tracking...');
+      console.log(`📁 Target Hugo site directory: ${siteDir}`);
+      console.log(`📁 Target content directory: ${path.join(siteDir, 'content')}`);
+      
+      // Verify content directory exists and is writable
+      const contentDir = path.join(siteDir, 'content');
+      await this.fileManager.ensureDir(contentDir);
+      console.log(`✅ Content directory ready: ${contentDir}`);
       
       // Generate homepage content
       if (generatedContent.homepage) {
-        const homepageFile = await this.generateHomepage(
-          siteDir, 
-          generatedContent.homepage, 
-          seoData?.homepage,
-          wizardData
-        );
-        createdFiles.push(homepageFile);
+        console.log('📄 Generating homepage content...');
+        try {
+          const homepageFile = await this.generateHomepage(
+            siteDir, 
+            generatedContent.homepage, 
+            seoData?.homepage,
+            wizardData
+          );
+          createdFiles.push(homepageFile);
+          await this.trackContent(homepageFile, 'Homepage', {}, true);
+          console.log(`✅ Homepage created: ${homepageFile}`);
+        } catch (error: any) {
+          console.error(`❌ Homepage generation failed: ${error.message}`);
+          errors.push(`Homepage: ${error.message}`);
+          await this.trackContent('', 'Homepage', {}, false, error.message);
+        }
       }
       
       // Generate about page
       if (generatedContent.about) {
-        const aboutFile = await this.generateAboutPage(
-          siteDir,
-          generatedContent.about,
-          seoData?.about,
-          wizardData
-        );
-        createdFiles.push(aboutFile);
+        console.log('📄 Generating about page content...');
+        try {
+          const aboutFile = await this.generateAboutPage(
+            siteDir,
+            generatedContent.about,
+            seoData?.about,
+            wizardData
+          );
+          createdFiles.push(aboutFile);
+          await this.trackContent(aboutFile, 'About Page', {}, true);
+          console.log(`✅ About page created: ${aboutFile}`);
+        } catch (error: any) {
+          console.error(`❌ About page generation failed: ${error.message}`);
+          errors.push(`About: ${error.message}`);
+          await this.trackContent('', 'About Page', {}, false, error.message);
+        }
       }
       
       // Generate services content
       if (generatedContent.services && wizardData.selectedServices) {
-        const serviceFiles = await this.generateServicesContent(
-          siteDir,
-          generatedContent.services,
-          seoData?.services,
-          wizardData.selectedServices,
-          structure
-        );
-        createdFiles.push(...serviceFiles);
+        console.log('📄 Generating services content...');
+        try {
+          const serviceFiles = await this.generateServicesContent(
+            siteDir,
+            generatedContent.services,
+            seoData?.services,
+            wizardData.selectedServices,
+            structure
+          );
+          createdFiles.push(...serviceFiles);
+          
+          for (const serviceFile of serviceFiles) {
+            await this.trackContent(serviceFile, 'Service Page', {}, true);
+          }
+          console.log(`✅ Services created: ${serviceFiles.length} files`);
+        } catch (error: any) {
+          console.error(`❌ Services generation failed: ${error.message}`);
+          errors.push(`Services: ${error.message}`);
+          await this.trackContent('', 'Services', {}, false, error.message);
+        }
       }
       
       // Generate contact page
       if (generatedContent.contact) {
-        const contactFile = await this.generateContactPage(
-          siteDir,
-          generatedContent.contact,
-          seoData?.contact,
-          wizardData
-        );
-        createdFiles.push(contactFile);
+        console.log('📄 Generating contact page content...');
+        try {
+          const contactFile = await this.generateContactPage(
+            siteDir,
+            generatedContent.contact,
+            seoData?.contact,
+            wizardData
+          );
+          createdFiles.push(contactFile);
+          await this.trackContent(contactFile, 'Contact Page', {}, true);
+          console.log(`✅ Contact page created: ${contactFile}`);
+        } catch (error: any) {
+          console.error(`❌ Contact page generation failed: ${error.message}`);
+          errors.push(`Contact: ${error.message}`);
+          await this.trackContent('', 'Contact Page', {}, false, error.message);
+        }
       }
       
       // Generate blog posts if applicable
       if (generatedContent.blog_posts && this.hasBlogStructure(structure)) {
-        const blogFiles = await this.generateBlogPosts(
-          siteDir,
-          generatedContent.blog_posts,
-          wizardData
-        );
-        createdFiles.push(...blogFiles);
+        console.log('📄 Generating blog posts...');
+        try {
+          const blogFiles = await this.generateBlogPosts(
+            siteDir,
+            generatedContent.blog_posts,
+            wizardData
+          );
+          createdFiles.push(...blogFiles);
+          
+          for (const blogFile of blogFiles) {
+            await this.trackContent(blogFile, 'Blog Post', {}, true);
+          }
+          console.log(`✅ Blog posts created: ${blogFiles.length} files`);
+        } catch (error: any) {
+          console.error(`❌ Blog posts generation failed: ${error.message}`);
+          errors.push(`Blog: ${error.message}`);
+          await this.trackContent('', 'Blog Posts', {}, false, error.message);
+        }
       }
       
-      console.log(`Content generation completed. Created ${createdFiles.length} files.`);
+      // Verify all created files exist and are readable
+      console.log('🔍 Verifying created files...');
+      for (const filePath of createdFiles) {
+        const exists = await this.fileManager.exists(filePath);
+        if (!exists) {
+          console.error(`❌ File verification failed: ${filePath}`);
+          errors.push(`File not found after creation: ${filePath}`);
+        } else {
+          const stats = await this.fileManager.getStats(filePath);
+          console.log(`✅ Verified: ${filePath} (${stats.size} bytes)`);
+        }
+      }
+      
+      console.log(`🎉 Content generation completed. Created ${createdFiles.length} files with ${errors.length} errors.`);
+      
+      // Log detailed tracking summary
+      console.log('📊 Content Tracking Summary:');
+      console.log('================================');
+      this.contentTracker.forEach(track => {
+        const status = track.success ? '✅' : '❌';
+        console.log(`${status} ${track.contentType}: ${track.filePath || 'N/A'}`);
+        if (track.size > 0) {
+          console.log(`   Size: ${track.size} bytes`);
+        }
+        if (track.error) {
+          console.log(`   Error: ${track.error}`);
+        }
+      });
+      console.log('================================');
       
       return {
         success: errors.length === 0,
         createdFiles,
-        errors
+        errors,
+        contentTracking: this.getContentTrackingInfo()
       };
       
     } catch (error: any) {
+      console.error(`💥 Content generation failed: ${error.message}`);
       return {
         success: false,
         createdFiles: [],
-        errors: [error.message]
+        errors: [error.message],
+        contentTracking: this.getContentTrackingInfo()
       };
     }
   }
@@ -128,6 +281,7 @@ export class ContentGenerator {
       
       const filePath = path.join(siteDir, 'content', '_index.md');
       await this.fileManager.writeFile(filePath, fullContent);
+      await this.trackContent(filePath, 'homepage', frontMatter, true);
       
       console.log('Homepage content generated');
       return filePath;
@@ -176,6 +330,7 @@ export class ContentGenerator {
       const filePath = path.join(siteDir, 'content', 'about.md');
       
       await this.fileManager.writeFile(filePath, fullContent);
+      await this.trackContent(filePath, 'about_page', frontMatter, true);
       
       console.log('About page content generated');
       return filePath;
@@ -233,6 +388,7 @@ export class ContentGenerator {
       const filePath = path.join(siteDir, 'content', 'contact.md');
       
       await this.fileManager.writeFile(filePath, fullContent);
+      await this.trackContent(filePath, 'contact_page', frontMatter, true);
       
       console.log('Contact page content generated');
       return filePath;
@@ -294,52 +450,83 @@ export class ContentGenerator {
     try {
       const createdFiles: string[] = [];
       
-      // Create services index page
+      // Log dynamic generation details
+      console.log(`🎯 Dynamic Services Generation:`);
+      console.log(`   Selected Services: ${selectedServices.length}`);
+      console.log(`   Generated Content: ${servicesContent.length}`);
+      console.log(`   Structure Type: ${structure.type}`);
+      console.log(`   Services: ${selectedServices.map(s => s.name).join(', ')}`);
+      
+      // Determine generation strategy based on user requirements
+      const maxServicePages = structure.maxServicePages || 10; // Configurable limit
+      const shouldCreateIndividualPages = structure.type === 'multi-page' && selectedServices.length <= maxServicePages;
+      
+      // Always create services index page
       const servicesIndexPath = await this.generateServicesIndex(
         siteDir,
         servicesContent,
         seoData,
-        selectedServices
+        selectedServices,
+        shouldCreateIndividualPages
       );
       createdFiles.push(servicesIndexPath);
+      console.log(`✅ Services index created: ${servicesIndexPath}`);
       
-      // Create individual service pages (for multi-page sites)
-      if (structure.type === 'multi-page') {
-        for (let i = 0; i < servicesContent.length; i++) {
+      // Create individual service pages based on requirements
+      if (shouldCreateIndividualPages) {
+        console.log(`📄 Creating ${selectedServices.length} individual service pages...`);
+        
+        for (let i = 0; i < Math.min(servicesContent.length, selectedServices.length); i++) {
           const serviceContent = servicesContent[i];
           const serviceData = selectedServices[i];
           
           if (serviceContent && serviceData) {
-            const servicePage = await this.generateServicePage(
-              siteDir,
-              serviceContent,
-              serviceData,
-              seoData
-            );
-            createdFiles.push(servicePage);
+            try {              const servicePage = await this.generateServicePage(
+                siteDir,
+                serviceContent,
+                serviceData,
+                seoData
+              );
+              createdFiles.push(servicePage);
+              console.log(`✅ Service page created: ${serviceData.name} -> ${servicePage}`);
+            } catch (serviceError: any) {
+              console.error(`❌ Failed to create service page for ${serviceData.name}: ${serviceError.message}`);
+              // Continue with other services instead of failing completely
+            }
           }
         }
+      } else {
+        console.log(`📋 Single-page structure: All services included in index page only`);
       }
       
+      // Handle case where more services selected than content generated
+      if (selectedServices.length > servicesContent.length) {
+        console.warn(`⚠️  Warning: ${selectedServices.length} services selected but only ${servicesContent.length} content pieces generated`);
+      }
+      
+      console.log(`🎉 Dynamic services generation completed: ${createdFiles.length} files created`);
       return createdFiles;
       
     } catch (error: any) {
       throw new Error(`Services content generation failed: ${error.message}`);
     }
   }
-  
+
+  // Enhanced services index with better dynamic handling
   private async generateServicesIndex(
     siteDir: string,
     servicesContent: any[],
     seoData: any,
-    selectedServices: any[]
-  ): Promise<string> {
-    const frontMatter = {
+    selectedServices: any[],
+    hasIndividualPages: boolean = false
+  ): Promise<string> {    const frontMatter = {
       title: 'Our Services',
-      description: 'Comprehensive services to meet your needs',
+      description: seoData?.meta_description || 'Comprehensive services to meet your needs',
       type: 'services',
       layout: 'services',
-      draft: false
+      draft: false,
+      services_count: selectedServices.length,
+      has_individual_pages: hasIndividualPages
     };
     
     let content = `# Our Services\n\nWe offer a comprehensive range of professional services to meet your needs.\n\n`;
@@ -356,21 +543,57 @@ export class ContentGenerator {
           serviceContent.benefits.forEach((benefit: string) => {
             content += `- ${benefit}\n`;
           });
-          content += `\n`;
+          content += `\n`;        }
+        
+        // Add pricing info if available
+        if (serviceData.pricing) {
+          content += `**Starting at:** ${serviceData.pricing}\n\n`;
         }
         
-        // Link to detailed page for multi-page sites
-        const serviceSlug = this.slugify(serviceData.name);
-        content += `[Learn More About ${serviceData.name}](/services/${serviceSlug}/)\n\n`;
-        content += `---\n\n`;
-      }
+        // Link to detailed page only if individual pages exist
+        if (hasIndividualPages) {
+          const serviceSlug = this.slugify(serviceData.name);
+          content += `[Learn More About ${serviceData.name}](/services/${serviceSlug}/)\n\n`;
+        } else {
+          // For single-page sites, add more detail directly
+          if (serviceContent.process && Array.isArray(serviceContent.process)) {
+            content += `### How It Works:\n\n`;
+            serviceContent.process.forEach((step: string, stepIndex: number) => {
+              content += `${stepIndex + 1}. ${step}\n`;
+            });
+            content += `\n`;
+          }
+        }
+        
+        content += `---\n\n`;      }
     });
+    
+    // Handle case where user selected more services than AI generated content
+    if (selectedServices.length > servicesContent.length) {
+      const missingServices = selectedServices.slice(servicesContent.length);
+      content += `## Additional Services\n\n`;
+      
+      missingServices.forEach((serviceData: any) => {
+        content += `### ${serviceData.name}\n\n`;
+        content += `${serviceData.description || 'Professional service tailored to your needs.'}\n\n`;
+        if (serviceData.pricing) {
+          content += `**Starting at:** ${serviceData.pricing}\n\n`;
+        }
+        content += `---\n\n`;
+      });
+    }
+    
+    // Add call to action
+    content += `## Ready to Get Started?\n\n`;
+    content += `Contact us today to discuss how our services can help you achieve your goals.\n\n`;
+    content += `[Get in Touch](/contact/)\n\n`;
     
     const fullContent = this.buildMarkdownFile(frontMatter, content);
     const filePath = path.join(siteDir, 'content', 'services', '_index.md');
     
     await this.fileManager.ensureDir(path.dirname(filePath));
     await this.fileManager.writeFile(filePath, fullContent);
+    await this.trackContent(filePath, 'services_index', frontMatter, true);
     
     return filePath;
   }
@@ -428,6 +651,7 @@ export class ContentGenerator {
     
     await this.fileManager.ensureDir(path.dirname(filePath));
     await this.fileManager.writeFile(filePath, fullContent);
+    await this.trackContent(filePath, 'service_page', frontMatter, true);
     
     return filePath;
   }
@@ -475,6 +699,7 @@ export class ContentGenerator {
     
     await this.fileManager.ensureDir(path.dirname(filePath));
     await this.fileManager.writeFile(filePath, fullContent);
+    await this.trackContent(filePath, 'blog_index', frontMatter, true);
     
     return filePath;
   }
@@ -521,6 +746,7 @@ Thank you for reading! Stay tuned for more updates and insights.
     
     await this.fileManager.ensureDir(path.dirname(filePath));
     await this.fileManager.writeFile(filePath, fullContent);
+    await this.trackContent(filePath, 'blog_post', frontMatter, true);
     
     return filePath;
   }

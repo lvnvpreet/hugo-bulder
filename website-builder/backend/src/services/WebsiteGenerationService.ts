@@ -22,6 +22,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as yaml from 'js-yaml';
 import axios from 'axios';
+import { g } from 'vitest/dist/suite-dWqIFb_-';
 
 const execAsync = promisify(exec);
 
@@ -477,21 +478,17 @@ export class WebsiteGenerationService {
         step: 'Generation completed successfully!',
         progress: 100,
         message: `Website ready for download (${generatedContent?.word_count_total || 0} words generated)`,
-      });
-
-      console.log(`🎉 Real Hugo site generated successfully in ${generationTime}ms`);
-      console.log(`📈 Total words generated: ${generatedContent?.word_count_total || 0}`);
-
-      // Cleanup temporary files
-      await this.cleanupTempFiles(siteDir);
+      });      console.log(`🎉 Real Hugo site generated successfully in ${generationTime}ms`);
+      console.log(`📈 Total words generated: ${generatedContent?.word_count_total || 0}`);      // Cleanup temporary files - DISABLED
+      // await this.cleanupTempFiles(siteDir);
 
     } catch (error) {
       console.error(`❌ Generation ${generationId} failed:`, error);
       
-      // Cleanup on error
-      if (siteDir) {
-        await this.cleanupTempFiles(siteDir);
-      }
+      // Cleanup on error - DISABLED
+      // if (siteDir) {
+      //   await this.cleanupTempFiles(siteDir);
+      // }
       
       await this.failGeneration(generationId, error instanceof Error ? error.message : String(error));
     }
@@ -1001,6 +998,8 @@ We understand that business moves fast. That's why we guarantee a response to al
     const contentDir = path.join(siteDir, 'content');
     await fs.ensureDir(contentDir);
 
+    console.log(generatedContent);
+
     const pages = generatedContent?.pages || {};
     let fileCount = 0;
     
@@ -1016,12 +1015,18 @@ We understand that business moves fast. That's why we guarantee a response to al
         word_count: pageData.word_count || 0
       };
 
+      console.log(pageData)
+
       const content = `---\n${yaml.dump(frontmatter)}---\n\n${pageData.content}`;
-      
+
+      console.log(content);
+
       const filePath = pageName === 'home' 
         ? path.join(contentDir, '_index.md')
         : path.join(contentDir, `${pageName}.md`);
       
+      console.log(`📝 Writing content for ${pageName} to ${filePath}`);
+
       await fs.writeFile(filePath, content, 'utf-8');
       console.log(`📝 Created content file: ${path.basename(filePath)} (${pageData.word_count || 0} words)`);
       fileCount++;

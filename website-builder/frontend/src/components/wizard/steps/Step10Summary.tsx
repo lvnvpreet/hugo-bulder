@@ -760,25 +760,43 @@ export default function Step10Summary() {
                 </p>
               </div>
             </div>
-          </div>
-
-          {/* Download and Preview Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          </div>          {/* Download and Preview Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
               <div className="flex items-center space-x-3 mb-4">
                 <ArrowDownTrayIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Download Your Website
+                  Built Website
                 </h3>
               </div>
               <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                Download the complete Hugo website as a ZIP file. Contains all source files, content, and assets.
-              </p>              <button
-                onClick={() => generationResult?.downloadUrl && window.open(generationResult.downloadUrl, '_blank')}
-                disabled={!generationResult?.downloadUrl}
+                Download the built website ready for deployment. Contains optimized HTML, CSS, and assets.
+              </p>
+              <button
+                onClick={() => generationResult?.siteUrl && window.open(generationResult.siteUrl, '_blank')}
+                disabled={!generationResult?.siteUrl}
                 className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
               >
-                Download ZIP File
+                Download Built Site
+              </button>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <DocumentIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Source Code
+                </h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                Download the complete Hugo source code. Includes themes, content files, and configuration.
+              </p>
+              <button
+                onClick={() => generationResult?.sourceUrl && window.open(generationResult.sourceUrl, '_blank')}
+                disabled={!generationResult?.sourceUrl}
+                className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium rounded-lg transition-colors"
+              >
+                Download Source
               </button>
             </div>
 

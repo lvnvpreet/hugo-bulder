@@ -30,10 +30,15 @@ export const CompletionStep: React.FC<CompletionStepProps> = ({
       window.open(result.previewUrl, '_blank');
     }
   };
+  const handleDownloadBuilt = () => {
+    if (result?.siteUrl) {
+      window.open(result.siteUrl, '_blank');
+    }
+  };
 
-  const handleDownload = () => {
-    if (result?.downloadUrl) {
-      window.open(result.downloadUrl, '_blank');
+  const handleDownloadSource = () => {
+    if (result?.sourceUrl) {
+      window.open(result.sourceUrl, '_blank');
     }
   };
 
@@ -86,12 +91,10 @@ export const CompletionStep: React.FC<CompletionStepProps> = ({
               </div>
             </div>
           </div>
-        </div>
-
-        {result && (
+        </div>        {result && (
           <div className="space-y-4">
             <h3 className="font-semibold">Your Website is Ready!</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Button
                 onClick={handlePreview}
                 className="flex items-center gap-2"
@@ -102,12 +105,21 @@ export const CompletionStep: React.FC<CompletionStepProps> = ({
               </Button>
               <Button
                 variant="outline"
-                onClick={handleDownload}
+                onClick={handleDownloadBuilt}
                 className="flex items-center gap-2"
-                disabled={!result.downloadUrl}
+                disabled={!result.siteUrl}
               >
                 <Download className="w-4 h-4" />
-                Download Files
+                Download Built Site
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleDownloadSource}
+                className="flex items-center gap-2"
+                disabled={!result.sourceUrl}
+              >
+                <Settings className="w-4 h-4" />
+                Download Source
               </Button>
             </div>
             

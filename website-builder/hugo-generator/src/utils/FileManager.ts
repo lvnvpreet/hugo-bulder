@@ -71,4 +71,12 @@ export class FileManager {
       throw new Error(`Failed to write binary file ${filePath}: ${error.message}`);
     }
   }
+
+  async readDir(dirPath: string): Promise<string[]> {
+    try {
+      return await fs.readdir(dirPath);
+    } catch (error: any) {
+      throw new Error(`Failed to read directory ${dirPath}: ${error.message}`);
+    }
+  }
 }
