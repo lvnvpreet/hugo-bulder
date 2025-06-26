@@ -34,6 +34,7 @@ const Step7LocationInfo: React.FC = () => {
   const [newServiceArea, setNewServiceArea] = React.useState('');
   const [errors, setErrors] = React.useState<string[]>([]);
   const isBusinessType = data.websiteType?.id === 'business' || data.websiteType?.id === 'ecommerce';
+  const isHealthcareCategory = data.businessCategory?.id === 'healthcare';
 
   // Update wizard data when form changes
   React.useEffect(() => {
@@ -85,13 +86,25 @@ const Step7LocationInfo: React.FC = () => {
     'International'
   ];
   const getLocationTypeConfig = () => {
-    if (isBusinessType) {
+    if (isHealthcareCategory && isBusinessType) {
+      return {
+        title: 'Where is your practice located?',
+        description: 'Help patients find your practice and understand your service areas.',
+        showServiceAreas: true,
+        addressLabel: 'Practice Address',
+        addressPlaceholder: 'Enter your practice address',
+        onlineLabel: 'Telehealth/Remote Practice Only',
+        onlineDescription: 'Check this if your practice operates entirely through telehealth without a physical location'
+      };
+    } else if (isBusinessType) {
       return {
         title: 'Where is your business located?',
         description: 'Help customers find you and understand your service areas.',
         showServiceAreas: true,
         addressLabel: 'Business Address',
-        addressPlaceholder: 'Enter your business address'
+        addressPlaceholder: 'Enter your business address',
+        onlineLabel: 'Online/Remote Business Only',
+        onlineDescription: 'Check this if your business operates entirely online without a physical location'
       };
     } else {
       return {
@@ -99,7 +112,9 @@ const Step7LocationInfo: React.FC = () => {
         description: 'This helps potential clients or collaborators understand your location.',
         showServiceAreas: false,
         addressLabel: 'Location',
-        addressPlaceholder: 'City, State or Region'
+        addressPlaceholder: 'City, State or Region',
+        onlineLabel: 'Remote Work Only',
+        onlineDescription: 'Check this if you work remotely and don\'t need to specify a physical location'
       };
     }
   };
@@ -134,13 +149,10 @@ const Step7LocationInfo: React.FC = () => {
           <div className="flex-1">
             <Label htmlFor="online-only" className="text-base font-medium text-gray-900 dark:text-white flex items-center">
               <Globe className="w-4 h-4 mr-2" />
-              {isBusinessType ? 'Online/Remote Business Only' : 'Remote Work Only'}
+              {config.onlineLabel}
             </Label>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              {isBusinessType 
-                ? 'Check this if your business operates entirely online without a physical location'
-                : 'Check this if you work remotely and don\'t need to specify a physical location'
-              }
+              {config.onlineDescription}
             </p>
           </div>
         </div>
@@ -263,12 +275,15 @@ const Step7LocationInfo: React.FC = () => {
             <div className="flex items-center space-x-2 mb-4">
               <Navigation className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Service Areas
+                {isHealthcareCategory ? 'Service Areas' : 'Service Areas'}
               </h3>
             </div>
 
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Where do you provide your services? This helps customers understand if you serve their area.
+              {isHealthcareCategory 
+                ? 'Where do you see patients? This helps patients understand if you serve their area.'
+                : 'Where do you provide your services? This helps customers understand if you serve their area.'
+              }
             </p>
 
             {/* Add Service Area */}
@@ -277,7 +292,10 @@ const Step7LocationInfo: React.FC = () => {
                 type="text"
                 value={newServiceArea}
                 onChange={(e) => setNewServiceArea(e.target.value)}
-                placeholder="Enter a service area (e.g., Downtown, Suburbs, Statewide)"
+                placeholder={isHealthcareCategory 
+                  ? "Enter a service area (e.g., Downtown, Metro Area, County-wide)"
+                  : "Enter a service area (e.g., Downtown, Suburbs, Statewide)"
+                }
                 className="flex-1"
                 onKeyPress={(e) => e.key === 'Enter' && handleAddServiceArea()}
               />
@@ -369,7 +387,7 @@ const Step7LocationInfo: React.FC = () => {
               
               {formData.isOnlineOnly ? (
                 <p className="text-sm text-green-700 dark:text-green-300">
-                  ✓ {isBusinessType ? 'Online/Remote Business' : 'Remote Work'} - No physical location needed
+                  ✓ {isHealthcareCategory ? 'Telehealth/Remote Practice' : (isBusinessType ? 'Online/Remote Business' : 'Remote Work')} - No physical location needed
                 </p>
               ) : (
                 <div className="space-y-1 text-sm text-green-700 dark:text-green-300">
@@ -394,14 +412,26 @@ const Step7LocationInfo: React.FC = () => {
       {/* Help Text */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
         <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">
-          💡 Location Tips:
+          {isHealthcareCategory ? '🏥 Practice Location Tips:' : '💡 Location Tips:'}
         </h4>
         <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
-          <li>• Your location helps with search engine optimization (SEO)</li>
-          <li>• Service areas help customers understand if you can help them</li>
-          <li>• You can always update this information later</li>
-          {isBusinessType && (
-            <li>• Consider listing specific neighborhoods or regions you serve</li>
+          {isHealthcareCategory ? (
+            <>
+              <li>• Your location helps patients find your practice easily</li>
+              <li>• Service areas help patients know if you serve their location</li>
+              <li>• Consider listing specific neighborhoods or regions you serve</li>
+              <li>• Include nearby landmarks or major intersections if helpful</li>
+              <li>• Telehealth practices can still benefit from listing their base location</li>
+            </>
+          ) : (
+            <>
+              <li>• Your location helps with search engine optimization (SEO)</li>
+              <li>• Service areas help customers understand if you can help them</li>
+              <li>• You can always update this information later</li>
+              {isBusinessType && (
+                <li>• Consider listing specific neighborhoods or regions you serve</li>
+              )}
+            </>
           )}
         </ul>
       </div>

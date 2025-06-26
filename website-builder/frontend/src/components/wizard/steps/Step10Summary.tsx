@@ -137,8 +137,14 @@ export default function Step10Summary() {
     let confidence = 60;
     let reasons = ['Default theme selected'];
 
-    // Simple logic for fallback theme selection
-    if (businessCategory === 'restaurant' || businessCategory === 'food') {
+    // Healthcare-specific logic
+    if (businessCategory === 'healthcare') {
+      themeId = 'bigspring';
+      confidence = 85;
+      reasons = ['Professional and trustworthy design perfect for healthcare practices', 'Clean layout that builds patient confidence', 'Mobile-friendly for patients on the go'];
+    }
+    // Simple logic for other business categories
+    else if (businessCategory === 'restaurant' || businessCategory === 'food') {
       themeId = 'restaurant';
       confidence = 80;
       reasons = ['Perfect for restaurant and food businesses'];
@@ -168,7 +174,7 @@ export default function Step10Summary() {
       recommendedTheme: themeId,
       confidence,
       reasons,
-      explanation: `We've selected ${themeId} as a good match for your ${websiteType || 'website'} with ${confidence}% confidence.`,
+      explanation: `We've selected ${themeId} as a good match for your ${businessCategory === 'healthcare' ? 'healthcare practice' : (websiteType || 'website')} with ${confidence}% confidence.`,
       fallback: 'ananke'
     };
   };

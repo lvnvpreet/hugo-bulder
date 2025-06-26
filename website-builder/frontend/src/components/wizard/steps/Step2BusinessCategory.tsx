@@ -2,16 +2,18 @@ import * as React from 'react';
 import { motion } from 'framer-motion';
 import { useWizardStore } from '../../../store/wizardStore';
 import { Card } from '../../ui/card';
-import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
-import { Search, Filter } from 'lucide-react';
+// TODO: Uncomment these imports when adding search functionality back
+// import { Input } from '../../ui/input';
+// import { Search, Filter } from 'lucide-react';
 import { cn } from '../../../utils';
 import type { BusinessCategory } from '../../../types/wizard';
 
 const Step2BusinessCategory: React.FC = () => {
   const { data, updateData } = useWizardStore();
   const [selectedCategory, setSelectedCategory] = React.useState(data.businessCategory);
-  const [searchTerm, setSearchTerm] = React.useState('');
+  // TODO: Uncomment these when adding search functionality back
+  // const [searchTerm, setSearchTerm] = React.useState('');
   const [filteredCategories, setFilteredCategories] = React.useState<BusinessCategory[]>([]);
 
   interface BusinessCategory {
@@ -19,164 +21,203 @@ const Step2BusinessCategory: React.FC = () => {
     name: string;
     industry: string;
     description: string;
-    services: string[];
+    subCategories: SubCategory[];
     icon: string;
     isPopular?: boolean;
-    examples?: string[];
+  }
+
+  interface SubCategory {
+    id: string;
+    name: string;
+    description: string;
+    services: string[]; // Predefined service IDs
+    requiredFields?: string[]; // Additional form fields
+    specializations?: string[]; // Further refinements
   }
 
   const businessCategories: BusinessCategory[] = [
-    {
-      id: 'technology',
-      name: 'Technology & Software',
-      industry: 'Technology',
-      description: 'Software development, IT services, tech consulting',
-      services: ['Web Development', 'Mobile Apps', 'IT Support', 'Cloud Services', 'Consulting'],
-      icon: '💻',
-      isPopular: true,
-      examples: ['Software companies', 'IT consultants', 'Web agencies']
-    },
     {
       id: 'healthcare',
       name: 'Healthcare & Medical',
       industry: 'Healthcare',
       description: 'Medical practices, healthcare services, wellness',
-      services: ['Appointments', 'Patient Portal', 'Services', 'Staff Directory', 'Insurance Info'],
       icon: '🏥',
       isPopular: true,
-      examples: ['Doctors', 'Dentists', 'Therapists', 'Clinics']
-    },
-    {
-      id: 'professional',
-      name: 'Professional Services',
-      industry: 'Professional',
-      description: 'Legal, accounting, consulting, financial services',
-      services: ['Consultations', 'Case Studies', 'Team Profiles', 'Resource Library', 'Contact'],
-      icon: '⚖️',
-      isPopular: true,
-      examples: ['Lawyers', 'Accountants', 'Consultants', 'Financial advisors']
-    },
-    {
-      id: 'restaurant',
-      name: 'Restaurant & Food Service',
-      industry: 'Food & Beverage',
-      description: 'Restaurants, cafes, catering, food delivery',
-      services: ['Menu', 'Online Ordering', 'Reservations', 'Catering', 'Location'],
-      icon: '🍽️',
-      isPopular: true,
-      examples: ['Restaurants', 'Cafes', 'Food trucks', 'Catering']
-    },
-    {
-      id: 'retail',
-      name: 'Retail & E-commerce',
-      industry: 'Retail',
-      description: 'Online stores, retail businesses, product sales',
-      services: ['Product Catalog', 'Shopping Cart', 'Payment Processing', 'Inventory', 'Shipping'],
-      icon: '🛍️',
-      isPopular: true,
-      examples: ['Online stores', 'Boutiques', 'Marketplaces']
-    },
-    {
-      id: 'realestate',
-      name: 'Real Estate',
-      industry: 'Real Estate',
-      description: 'Real estate agents, property management, rentals',
-      services: ['Property Listings', 'Search Tools', 'Agent Profiles', 'Market Analysis', 'Contact'],
-      icon: '🏠',
-      isPopular: false,
-      examples: ['Real estate agents', 'Property managers', 'Brokers']
-    },
-    {
-      id: 'education',
-      name: 'Education & Training',
-      industry: 'Education',
-      description: 'Schools, online courses, training programs',
-      services: ['Course Catalog', 'Enrollment', 'Resources', 'Instructor Profiles', 'Certifications'],
-      icon: '🎓',
-      isPopular: false,
-      examples: ['Schools', 'Online courses', 'Training centers']
-    },
-    {
-      id: 'creative',
-      name: 'Creative & Design',
-      industry: 'Creative',
-      description: 'Design agencies, photographers, artists, creative services',
-      services: ['Portfolio', 'Service Packages', 'Client Gallery', 'Testimonials', 'Booking'],
-      icon: '🎨',
-      isPopular: false,
-      examples: ['Designers', 'Photographers', 'Artists', 'Agencies']
-    },
-    {
-      id: 'automotive',
-      name: 'Automotive',
-      industry: 'Automotive',
-      description: 'Auto dealers, repair shops, automotive services',
-      services: ['Inventory', 'Service Booking', 'Parts Catalog', 'Financing', 'Location'],
-      icon: '🚗',
-      isPopular: false,
-      examples: ['Car dealers', 'Auto repair', 'Car rental']
-    },
-    {
-      id: 'nonprofit',
-      name: 'Non-Profit Organization',
-      industry: 'Non-Profit',
-      description: 'Charities, foundations, community organizations',
-      services: ['Mission Statement', 'Donation Portal', 'Events', 'Volunteer Sign-up', 'Impact Stories'],
-      icon: '❤️',
-      isPopular: false,
-      examples: ['Charities', 'Foundations', 'Community groups']
-    },
-    {
-      id: 'homeservices',
-      name: 'Home Services',
-      industry: 'Home Services',
-      description: 'Plumbing, HVAC, cleaning, landscaping, home repair',
-      services: ['Service Areas', 'Online Booking', 'Emergency Services', 'Estimates', 'Reviews'],
-      icon: '🔧',
-      isPopular: false,
-      examples: ['Plumbers', 'Electricians', 'Cleaners', 'Landscapers']
-    },
-    {
-      id: 'beauty',
-      name: 'Beauty & Wellness',
-      industry: 'Beauty & Wellness',
-      description: 'Salons, spas, fitness, wellness services',
-      services: ['Appointment Booking', 'Service Menu', 'Staff Profiles', 'Packages', 'Gift Cards'],
-      icon: '💄',
-      isPopular: false,
-      examples: ['Salons', 'Spas', 'Gyms', 'Wellness centers']
+      subCategories: [
+        {
+          id: 'doctors',
+          name: 'Doctors',
+          description: 'General practitioners and specialists',
+          services: ['Appointments', 'Patient Portal', 'Medical Records', 'Telehealth', 'Prescription Management'],
+          requiredFields: ['Medical License Number', 'Specialization'],
+          specializations: ['General Practice', 'Cardiology', 'Pediatrics', 'Orthopedics', 'Dermatology']
+        },
+        {
+          id: 'dentists',
+          name: 'Dentists',
+          description: 'Dental practices and oral health',
+          services: ['Appointments', 'Treatment Plans', 'Patient Records', 'Insurance Claims', 'Before/After Gallery'],
+          requiredFields: ['Dental License Number', 'Practice Type'],
+          specializations: ['General Dentistry', 'Orthodontics', 'Oral Surgery', 'Cosmetic Dentistry']
+        },
+        {
+          id: 'therapists',
+          name: 'Therapists',
+          description: 'Physical therapy and rehabilitation',
+          services: ['Appointments', 'Treatment Plans', 'Progress Tracking', 'Exercise Library', 'Insurance Verification'],
+          requiredFields: ['Therapy License', 'Specialization Area'],
+          specializations: ['Physical Therapy', 'Occupational Therapy', 'Speech Therapy', 'Mental Health']
+        },
+        {
+          id: 'clinics',
+          name: 'Clinics',
+          description: 'Medical clinics and healthcare centers',
+          services: ['Appointments', 'Patient Portal', 'Services Directory', 'Staff Profiles', 'Insurance Info'],
+          requiredFields: ['Clinic License', 'Services Offered'],
+          specializations: ['Urgent Care', 'Family Medicine', 'Specialized Clinics', 'Walk-in Clinics']
+        }
+      ]
     }
+    // TODO: Uncomment these categories when ready to support multiple business types
+    // {
+    //   id: 'technology',
+    //   name: 'Technology & Software',
+    //   industry: 'Technology',
+    //   description: 'Software development, IT services, tech consulting',
+    //   services: ['Web Development', 'Mobile Apps', 'IT Support', 'Cloud Services', 'Consulting'],
+    //   icon: '💻',
+    //   isPopular: true,
+    //   examples: ['Software companies', 'IT consultants', 'Web agencies']
+    // },
+    // {
+    //   id: 'professional',
+    //   name: 'Professional Services',
+    //   industry: 'Professional',
+    //   description: 'Legal, accounting, consulting, financial services',
+    //   services: ['Consultations', 'Case Studies', 'Team Profiles', 'Resource Library', 'Contact'],
+    //   icon: '⚖️',
+    //   isPopular: true,
+    //   examples: ['Lawyers', 'Accountants', 'Consultants', 'Financial advisors']
+    // },
+    // {
+    //   id: 'restaurant',
+    //   name: 'Restaurant & Food Service',
+    //   industry: 'Food & Beverage',
+    //   description: 'Restaurants, cafes, catering, food delivery',
+    //   services: ['Menu', 'Online Ordering', 'Reservations', 'Catering', 'Location'],
+    //   icon: '🍽️',
+    //   isPopular: true,
+    //   examples: ['Restaurants', 'Cafes', 'Food trucks', 'Catering']
+    // },
+    // {
+    //   id: 'retail',
+    //   name: 'Retail & E-commerce',
+    //   industry: 'Retail',
+    //   description: 'Online stores, retail businesses, product sales',
+    //   services: ['Product Catalog', 'Shopping Cart', 'Payment Processing', 'Inventory', 'Shipping'],
+    //   icon: '🛍️',
+    //   isPopular: true,
+    //   examples: ['Online stores', 'Boutiques', 'Marketplaces']
+    // },
+    // {
+    //   id: 'realestate',
+    //   name: 'Real Estate',
+    //   industry: 'Real Estate',
+    //   description: 'Real estate agents, property management, rentals',
+    //   services: ['Property Listings', 'Search Tools', 'Agent Profiles', 'Market Analysis', 'Contact'],
+    //   icon: '🏠',
+    //   isPopular: false,
+    //   examples: ['Real estate agents', 'Property managers', 'Brokers']
+    // },
+    // {
+    //   id: 'education',
+    //   name: 'Education & Training',
+    //   industry: 'Education',
+    //   description: 'Schools, online courses, training programs',
+    //   services: ['Course Catalog', 'Enrollment', 'Resources', 'Instructor Profiles', 'Certifications'],
+    //   icon: '🎓',
+    //   isPopular: false,
+    //   examples: ['Schools', 'Online courses', 'Training centers']
+    // },
+    // {
+    //   id: 'creative',
+    //   name: 'Creative & Design',
+    //   industry: 'Creative',
+    //   description: 'Design agencies, photographers, artists, creative services',
+    //   services: ['Portfolio', 'Service Packages', 'Client Gallery', 'Testimonials', 'Booking'],
+    //   icon: '🎨',
+    //   isPopular: false,
+    //   examples: ['Designers', 'Photographers', 'Artists', 'Agencies']
+    // },
+    // {
+    //   id: 'automotive',
+    //   name: 'Automotive',
+    //   industry: 'Automotive',
+    //   description: 'Auto dealers, repair shops, automotive services',
+    //   services: ['Inventory', 'Service Booking', 'Parts Catalog', 'Financing', 'Location'],
+    //   icon: '🚗',
+    //   isPopular: false,
+    //   examples: ['Car dealers', 'Auto repair', 'Car rental']
+    // },
+    // {
+    //   id: 'nonprofit',
+    //   name: 'Non-Profit Organization',
+    //   industry: 'Non-Profit',
+    //   description: 'Charities, foundations, community organizations',
+    //   services: ['Mission Statement', 'Donation Portal', 'Events', 'Volunteer Sign-up', 'Impact Stories'],
+    //   icon: '❤️',
+    //   isPopular: false,
+    //   examples: ['Charities', 'Foundations', 'Community groups']
+    // },
+    // {
+    //   id: 'homeservices',
+    //   name: 'Home Services',
+    //   industry: 'Home Services',
+    //   description: 'Plumbing, HVAC, cleaning, landscaping, home repair',
+    //   services: ['Service Areas', 'Online Booking', 'Emergency Services', 'Estimates', 'Reviews'],
+    //   icon: '🔧',
+    //   isPopular: false,
+    //   examples: ['Plumbers', 'Electricians', 'Cleaners', 'Landscapers']
+    // },
+    // {
+    //   id: 'beauty',
+    //   name: 'Beauty & Wellness',
+    //   industry: 'Beauty & Wellness',
+    //   description: 'Salons, spas, fitness, wellness services',
+    //   services: ['Appointment Booking', 'Service Menu', 'Staff Profiles', 'Packages', 'Gift Cards'],
+    //   icon: '💄',
+    //   isPopular: false,
+    //   examples: ['Salons', 'Spas', 'Gyms', 'Wellness centers']
+    // }
   ];
 
-  // Filter categories based on search term
+  // Filter categories based on allowed categories from Step 1
   React.useEffect(() => {
-    if (searchTerm) {
-      const filtered = businessCategories.filter(category =>
-        category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        category.industry.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        category.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        category.services.some(service => 
-          service.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
-      setFilteredCategories(filtered);
-    } else {
-      setFilteredCategories(businessCategories);
-    }
-  }, [searchTerm]);
+    const allowedCategories = data.websiteType?.allowedCategories || ['healthcare'];
+    console.log('🔍 Filtering categories. Allowed categories:', allowedCategories);
+    console.log('🔍 All business categories:', businessCategories.map(c => c.id));
+    
+    const filtered = businessCategories.filter(category => 
+      allowedCategories.includes(category.id)
+    );
+    
+    console.log('✅ Filtered categories:', filtered.map(c => c.name));
+    setFilteredCategories(filtered);
+  }, [data.websiteType]);
 
   const handleCategorySelect = (category: BusinessCategory) => {
     const categoryData = {
       id: category.id,
       name: category.name,
       industry: category.industry,
-      services: category.services
+      subCategories: category.subCategories
     };
     
     setSelectedCategory(categoryData);
     updateData('businessCategory', categoryData);
     
     console.log('Business category selected:', category.id);
+    console.log('Available subcategories:', category.subCategories.map(sub => sub.name));
   };
 
   // Only show this step if website type is business or ecommerce
@@ -190,72 +231,44 @@ const Step2BusinessCategory: React.FC = () => {
     <div className="space-y-6">      {/* Header */}
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          What type of business do you have?
+          {filteredCategories.length === 1 
+            ? `${filteredCategories[0]?.name || 'Business Category'}`
+            : 'Select Your Business Category'
+          }
         </h2>
         <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          Select your business category to get industry-specific features and content suggestions.
+          {filteredCategories.length === 1
+            ? 'Perfect choice! We\'ll customize your website with industry-specific features and content.'
+            : 'Select your business category to get industry-specific features and content suggestions.'
+          }
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md mx-auto">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <Input
-          type="text"
-          placeholder="Search business categories..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 pr-4 py-2 w-full"
-        />
-      </div>
-
-      {/* Popular Categories */}
-      {!searchTerm && (
-        <div className="space-y-4">          <div className="flex items-center space-x-2">
-            <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Popular Categories</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {businessCategories
-              .filter(category => category.isPopular)
-              .map((category) => (
-                <CategoryCard
-                  key={category.id}
-                  category={category}
-                  isSelected={selectedCategory?.id === category.id}
-                  onSelect={handleCategorySelect}
-                  isPopular={true}
-                />
-              ))}
-          </div>
-        </div>
-      )}      {/* All Categories */}
+      {/* Business Category Selection */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          {searchTerm ? 'Search Results' : 'All Categories'}
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center">
+          {filteredCategories.length === 1 
+            ? `${filteredCategories[0]?.industry || 'Business'} Services`
+            : 'Available Business Categories'
+          }
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCategories.map((category) => (
-            <CategoryCard
-              key={category.id}
-              category={category}
-              isSelected={selectedCategory?.id === category.id}
-              onSelect={handleCategorySelect}
-              isPopular={false}
-            />
-          ))}
+        <div className="flex justify-center">
+          <div className={cn(
+            "w-full",
+            filteredCategories.length === 1 ? "max-w-md" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          )}>
+            {filteredCategories.map((category) => (
+              <CategoryCard
+                key={category.id}
+                category={category}
+                isSelected={selectedCategory?.id === category.id}
+                onSelect={handleCategorySelect}
+                isPopular={category.isPopular || false}
+              />
+            ))}
+          </div>
         </div>
-      </div>      {/* No Results */}
-      {searchTerm && filteredCategories.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-gray-500 dark:text-gray-400">No categories found matching "{searchTerm}"</p>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-            Try a different search term or browse all categories above.
-          </p>
-        </div>
-      )}
-
-      {/* Selection Summary */}
+      </div>      {/* Selection Summary */}
       {selectedCategory && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -268,19 +281,19 @@ const Step2BusinessCategory: React.FC = () => {
                 Selected: {selectedCategory.name}
               </h4>
               <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                We'll automatically include relevant services and features for your industry.
+                We'll show you specific options for your healthcare practice in the next step.
               </p>
               <div className="mt-2">
-                <p className="text-xs text-blue-600 font-medium">Suggested services:</p>
+                <p className="text-xs text-blue-600 font-medium">Available subcategories:</p>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {selectedCategory.services.slice(0, 3).map((service, index) => (
+                  {selectedCategory.subCategories.slice(0, 3).map((subCategory, index) => (
                     <Badge key={index} variant="secondary" className="text-xs">
-                      {service}
+                      {subCategory.name}
                     </Badge>
                   ))}
-                  {selectedCategory.services.length > 3 && (
+                  {selectedCategory.subCategories.length > 3 && (
                     <Badge variant="secondary" className="text-xs">
-                      +{selectedCategory.services.length - 3} more
+                      +{selectedCategory.subCategories.length - 3} more
                     </Badge>
                   )}
                 </div>
@@ -295,7 +308,7 @@ const Step2BusinessCategory: React.FC = () => {
 
 // Category Card Component
 interface CategoryCardProps {
-  category: BusinessCategory & { examples?: string[] };
+  category: BusinessCategory;
   isSelected: boolean;
   onSelect: (category: any) => void;
   isPopular: boolean;
@@ -342,10 +355,10 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, isSelected, onSel
             {category.description}
           </p>
 
-          {/* Examples */}
-          {category.examples && (
+          {/* Subcategories */}
+          {category.subCategories && category.subCategories.length > 0 && (
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-medium">Examples:</span> {category.examples.join(', ')}
+              <span className="font-medium">Includes:</span> {category.subCategories.map(sub => sub.name).join(', ')}
             </div>
           )}
 

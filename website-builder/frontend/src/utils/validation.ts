@@ -94,12 +94,13 @@ export const websiteStructureSchema = z.object({
   type: z.enum(['single-page', 'multi-page'], {
     required_error: 'Please select a website structure type'
   }),
-  selectedPages: z.array(z.string()).min(1, 'Please select at least one page'),
-  selectedSections: z.array(z.string()).min(1, 'Please select at least one section'),
-  navigationStyle: z.enum(['horizontal', 'vertical', 'sidebar']),
-  includeSearch: z.boolean(),
-  includeBlog: z.boolean(),
-  includeEcommerce: z.boolean()
+  // Made optional since Hugo themes handle page/section generation
+  selectedPages: z.array(z.string()).optional(),
+  selectedSections: z.array(z.string()).optional(),
+  navigationStyle: z.string().optional(),
+  includeSearch: z.boolean().optional(),
+  includeBlog: z.boolean().optional(),
+  includeEcommerce: z.boolean().optional()
 })
 
 // Color Scheme validation

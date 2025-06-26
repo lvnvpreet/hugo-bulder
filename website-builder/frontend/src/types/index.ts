@@ -45,10 +45,12 @@ export interface WizardData {
 }
 
 export interface WebsiteType {
+  id?: string
   category: string
   subcategory?: string
   description: string
-  tags: string[]
+  tags?: string[]
+  allowedCategories?: string[] // Array of business category IDs allowed for this website type
 }
 
 export interface BusinessInfo {

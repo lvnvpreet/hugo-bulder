@@ -14,7 +14,12 @@ import {
   Briefcase,
   MessageSquare,
   Globe,
-  Palette
+  Palette,
+  Heart,
+  Calendar,
+  BookOpen,
+  Building2,
+  UserCheck
 } from 'lucide-react';
 import { cn } from '../../../utils';
 
@@ -27,9 +32,67 @@ const Step4WebsitePurpose: React.FC = () => {
   const isPersonalType = data.websiteType?.id === 'personal';
   const isBlogType = data.websiteType?.id === 'blog';
   const isPortfolioType = data.websiteType?.id === 'portfolio';
+  
+  // Healthcare-specific logic
+  const isHealthcareCategory = data.businessCategory?.id === 'healthcare';
+  const selectedSubcategory = data.businessInfo?.selectedSubcategory;
 
   const getPurposeOptions = () => {
-    if (isBusinessType) {
+    // Healthcare-specific purposes
+    if (isHealthcareCategory && isBusinessType) {
+      return [
+        {
+          id: 'patient-acquisition',
+          title: 'Patient Acquisition',
+          description: 'Attract new patients and build trust in your practice',
+          icon: Heart,
+          color: 'blue',
+          popular: true
+        },
+        {
+          id: 'appointment-booking',
+          title: 'Appointment Booking',
+          description: 'Enable online appointment scheduling and reduce phone calls',
+          icon: Calendar,
+          color: 'green',
+          popular: true
+        },
+        {
+          id: 'patient-support',
+          title: 'Patient Care & Support',
+          description: 'Provide resources and support to existing patients',
+          icon: UserCheck,
+          color: 'purple',
+          popular: false
+        },
+        {
+          id: 'health-education',
+          title: 'Health Education',
+          description: 'Share medical knowledge and health information',
+          icon: BookOpen,
+          color: 'orange',
+          popular: false
+        },
+        {
+          id: 'practice-information',
+          title: 'Practice Information',
+          description: 'Share office details, hours, services, and team information',
+          icon: Building2,
+          color: 'indigo',
+          popular: false
+        },
+        {
+          id: 'professional-credibility',
+          title: 'Professional Credibility',
+          description: 'Establish expertise, showcase credentials and build trust',
+          icon: Star,
+          color: 'yellow',
+          popular: false
+        }
+      ];
+    }
+    // Generic business purposes for non-healthcare
+    else if (isBusinessType) {
       return [
         {
           id: 'lead-generation',
@@ -163,6 +226,62 @@ const Step4WebsitePurpose: React.FC = () => {
   };
 
   const getGoalOptions = () => {
+    // Healthcare-specific goals
+    if (isHealthcareCategory && isBusinessType) {
+      const commonHealthcareGoals = [
+        'Attract new patients',
+        'Improve patient communication',
+        'Build patient trust and credibility',
+        'Showcase medical expertise',
+        'Improve online reputation',
+        'Provide 24/7 health resources',
+        'Enable online appointment booking',
+        'Reduce phone call volume'
+      ];
+
+      // Subcategory-specific goals
+      let subcategoryGoals: string[] = [];
+      if (selectedSubcategory) {
+        switch (selectedSubcategory.id) {
+          case 'doctors':
+            subcategoryGoals = [
+              'Establish medical authority',
+              'Share health education content',
+              'Display patient testimonials',
+              'Show medical credentials'
+            ];
+            break;
+          case 'dentists':
+            subcategoryGoals = [
+              'Reduce appointment no-shows',
+              'Educate about dental procedures',
+              'Showcase before/after results',
+              'Promote preventive care'
+            ];
+            break;
+          case 'therapists':
+            subcategoryGoals = [
+              'Build therapeutic rapport',
+              'Provide therapy resources',
+              'Reduce therapy stigma',
+              'Share wellness tips'
+            ];
+            break;
+          case 'clinics':
+            subcategoryGoals = [
+              'Showcase clinic services',
+              'Highlight team expertise',
+              'Streamline patient intake',
+              'Display clinic facilities'
+            ];
+            break;
+        }
+      }
+
+      return [...commonHealthcareGoals, ...subcategoryGoals];
+    }
+    
+    // Generic business goals
     const commonGoals = [
       'Increase website traffic',
       'Generate more leads',
@@ -235,14 +354,84 @@ const Step4WebsitePurpose: React.FC = () => {
     updateData('websitePurpose', purposeData);
   };
 
+  const getRecommendedFeatures = () => {
+    if (!selectedSubcategory || !selectedPurpose) return [];
+
+    const features: Array<{title: string; description: string}> = [];
+
+    // Purpose-based features
+    switch (selectedPurpose) {
+      case 'patient-acquisition':
+        features.push(
+          { title: 'Patient Testimonials', description: 'Build trust with patient reviews and success stories' },
+          { title: 'Professional Bio', description: 'Showcase your credentials and experience' }
+        );
+        break;
+      case 'appointment-booking':
+        features.push(
+          { title: 'Online Scheduling', description: 'Allow patients to book appointments 24/7' },
+          { title: 'Calendar Integration', description: 'Sync with your practice management system' }
+        );
+        break;
+      case 'patient-support':
+        features.push(
+          { title: 'Patient Portal', description: 'Secure access to health records and results' },
+          { title: 'FAQ Section', description: 'Answer common patient questions' }
+        );
+        break;
+      case 'health-education':
+        features.push(
+          { title: 'Health Blog', description: 'Share health tips and medical insights' },
+          { title: 'Resource Library', description: 'Downloadable health guides and forms' }
+        );
+        break;
+    }
+
+    // Subcategory-based features
+    switch (selectedSubcategory.id) {
+      case 'doctors':
+        features.push(
+          { title: 'Specialty Services', description: 'Highlight your medical specializations' },
+          { title: 'Insurance Information', description: 'List accepted insurance plans' }
+        );
+        break;
+      case 'dentists':
+        features.push(
+          { title: 'Treatment Gallery', description: 'Before/after photos of dental work' },
+          { title: 'Payment Plans', description: 'Flexible payment and financing options' }
+        );
+        break;
+      case 'therapists':
+        features.push(
+          { title: 'Therapy Approaches', description: 'Explain your therapeutic methods' },
+          { title: 'Self-Help Resources', description: 'Tools and exercises for patients' }
+        );
+        break;
+      case 'clinics':
+        features.push(
+          { title: 'Team Directory', description: 'Meet our healthcare professionals' },
+          { title: 'Location & Hours', description: 'Multiple locations and operating hours' }
+        );
+        break;
+    }
+
+    return features.slice(0, 6); // Limit to 6 features
+  };
+
   return (    <div className="space-y-8">
       {/* Header */}
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          What's the main purpose of your website?
+          {isHealthcareCategory 
+            ? "What's the main purpose of your healthcare website?"
+            : "What's the main purpose of your website?"
+          }
         </h2>
         <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          Understanding your primary goal helps us suggest the right features and content structure.
+          {isHealthcareCategory
+            ? "Understanding your primary goal helps us create the right features for your practice and patients."
+            : "Understanding your primary goal helps us suggest the right features and content structure."
+          }
         </p>
       </div>
 
@@ -397,7 +586,7 @@ const Step4WebsitePurpose: React.FC = () => {
         >
           <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center">
             <Target className="w-5 h-5 mr-2" />
-            Your Website Goals Summary
+            {isHealthcareCategory ? "Your Practice Website Goals" : "Your Website Goals Summary"}
           </h4>
           
           {selectedPurpose && (
@@ -422,8 +611,37 @@ const Step4WebsitePurpose: React.FC = () => {
             </div>
           )}
             <p className="text-xs text-blue-600 dark:text-blue-400 mt-3">
-            We'll use these goals to recommend the best features and content structure for your website.
+            {isHealthcareCategory 
+              ? "We'll use these goals to recommend the best features for your practice and patient experience."
+              : "We'll use these goals to recommend the best features and content structure for your website."
+            }
           </p>
+        </motion.div>
+      )}
+
+      {/* Healthcare-specific recommendations */}
+      {isHealthcareCategory && selectedPurpose && selectedSubcategory && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg p-6 border border-green-200 dark:border-green-800"
+        >
+          <h4 className="font-semibold text-green-900 dark:text-green-100 mb-3 flex items-center">
+            <Heart className="w-5 h-5 mr-2" />
+            Recommended Features for {selectedSubcategory.name}
+          </h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {getRecommendedFeatures().map((feature, index) => (
+              <div key={index} className="flex items-start space-x-3">
+                <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0" />
+                <div>
+                  <h5 className="font-medium text-green-800 dark:text-green-200 text-sm">{feature.title}</h5>
+                  <p className="text-xs text-green-600 dark:text-green-300">{feature.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </motion.div>
       )}
 
@@ -431,11 +649,13 @@ const Step4WebsitePurpose: React.FC = () => {
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
         <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2 flex items-center">
           <HelpCircle className="w-4 h-4 mr-2" />
-          Not sure about your goals?
+          {isHealthcareCategory ? "Not sure about your practice goals?" : "Not sure about your goals?"}
         </h4>
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          Don't worry! You can always adjust these later. Start with what feels most important right now, 
-          and we'll help you refine your website strategy as you build it.
+          {isHealthcareCategory 
+            ? "Don't worry! You can always adjust these later. Most healthcare practices start with patient acquisition and building trust. We'll help you refine your website strategy as you build it."
+            : "Don't worry! You can always adjust these later. Start with what feels most important right now, and we'll help you refine your website strategy as you build it."
+          }
         </p>
       </div>
     </div>

@@ -4,11 +4,12 @@ import { useWizardStore } from '../../../store/wizardStore';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { 
-  Building2, 
-  User, 
-  PenTool, 
-  Briefcase, 
-  ShoppingCart,
+  Building2,
+  // TODO: Uncomment these imports when adding other website types
+  // User, 
+  // PenTool, 
+  // Briefcase, 
+  // ShoppingCart,
   Star
 } from 'lucide-react';
 import { cn } from '../../../utils';
@@ -26,55 +27,60 @@ const Step1WebsiteType: React.FC = () => {
       features: ['Contact forms', 'Service pages', 'About us', 'Testimonials'],
       nextStep: 2, // Goes to business category
       color: 'blue',
-      popular: true
-    },
-    {
-      id: 'personal',
-      category: 'Personal Website',
-      description: 'Showcase your personal brand and portfolio',
-      icon: User,
-      features: ['Portfolio', 'About me', 'Blog', 'Contact'],
-      nextStep: 3, // Skips business category
-      color: 'green',
-      popular: false
-    },
-    {
-      id: 'blog',
-      category: 'Blog Website',
-      description: 'Share your thoughts and expertise',
-      icon: PenTool,
-      features: ['Blog posts', 'Categories', 'Archives', 'Comments'],
-      nextStep: 3, // Skips business category
-      color: 'purple',
-      popular: false
-    },
-    {
-      id: 'portfolio',
-      category: 'Portfolio Website',
-      description: 'Display your work and achievements',
-      icon: Briefcase,
-      features: ['Project gallery', 'Skills', 'Resume', 'Testimonials'],
-      nextStep: 3, // Skips business category
-      color: 'orange',
-      popular: false
-    },
-    {
-      id: 'ecommerce',
-      category: 'E-commerce Website',
-      description: 'Sell products online',
-      icon: ShoppingCart,
-      features: ['Product catalog', 'Shopping cart', 'Payments', 'Orders'],
-      nextStep: 2, // Goes to business category
-      color: 'red',
-      popular: true
+      popular: true,
+      allowedCategories: ['healthcare']
+      // TODO: Add more categories when ready to support multiple business types
+      // allowedCategories: ['healthcare', 'technology', 'professional', 'restaurant', 'retail']
     }
+    // TODO: Uncomment these types when ready to support multiple website types
+    // {
+    //   id: 'personal',
+    //   category: 'Personal Website',
+    //   description: 'Showcase your personal brand and portfolio',
+    //   icon: User,
+    //   features: ['Portfolio', 'About me', 'Blog', 'Contact'],
+    //   nextStep: 3, // Skips business category
+    //   color: 'green',
+    //   popular: false
+    // },
+    // {
+    //   id: 'blog',
+    //   category: 'Blog Website',
+    //   description: 'Share your thoughts and expertise',
+    //   icon: PenTool,
+    //   features: ['Blog posts', 'Categories', 'Archives', 'Comments'],
+    //   nextStep: 3, // Skips business category
+    //   color: 'purple',
+    //   popular: false
+    // },
+    // {
+    //   id: 'portfolio',
+    //   category: 'Portfolio Website',
+    //   description: 'Display your work and achievements',
+    //   icon: Briefcase,
+    //   features: ['Project gallery', 'Skills', 'Resume', 'Testimonials'],
+    //   nextStep: 3, // Skips business category
+    //   color: 'orange',
+    //   popular: false
+    // },
+    // {
+    //   id: 'ecommerce',
+    //   category: 'E-commerce Website',
+    //   description: 'Sell products online',
+    //   icon: ShoppingCart,
+    //   features: ['Product catalog', 'Shopping cart', 'Payments', 'Orders'],
+    //   nextStep: 2, // Goes to business category
+    //   color: 'red',
+    //   popular: true
+    // }
   ];
 
   const handleTypeSelect = (type: typeof websiteTypes[0]) => {
     const websiteTypeData = {
       id: type.id,
       category: type.category,
-      description: type.description
+      description: type.description,
+      allowedCategories: type.allowedCategories || []
     };
     
     setSelectedType(websiteTypeData);
@@ -82,6 +88,7 @@ const Step1WebsiteType: React.FC = () => {
     
     // Analytics tracking could go here
     console.log('Website type selected:', type.id);
+    console.log('Allowed categories:', type.allowedCategories);
   };
   const getColorClasses = (color: string, isSelected: boolean) => {
     const colors = {

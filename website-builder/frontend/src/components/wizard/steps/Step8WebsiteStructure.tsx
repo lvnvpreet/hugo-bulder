@@ -3,24 +3,11 @@ import { motion } from 'framer-motion';
 import { useWizardStore } from '../../../store/wizardStore';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
-import { Checkbox } from '../../ui/checkbox';
-import { Label } from '../../ui/label';
 import { 
   Layout, 
   FileText, 
   Grid3X3,
-  Menu,
-  Image,
-  ShoppingCart,
-  MessageSquare,
-  Star,
-  Layers,
-  Navigation,
-  Home,
-  Users,
-  Briefcase,
-  Mail,
-  Info
+  Star
 } from 'lucide-react';
 import { cn } from '../../../utils';
 
@@ -29,38 +16,23 @@ const Step8WebsiteStructure: React.FC = () => {
   const [selectedType, setSelectedType] = React.useState<'single-page' | 'multi-page'>(
     data.websiteStructure?.type || 'single-page'
   );
-  const [selectedSections, setSelectedSections] = React.useState<string[]>(
-    data.websiteStructure?.selectedSections || []
-  );
-  const [selectedPages, setSelectedPages] = React.useState<string[]>(
-    data.websiteStructure?.selectedPages || []
-  );
-  const [navigationStyle, setNavigationStyle] = React.useState<string>(
-    data.websiteStructure?.navigationStyle || 'horizontal'
-  );
-  const [features, setFeatures] = React.useState({
-    hasGallery: data.websiteStructure?.hasGallery || false,
-    hasBlog: data.websiteStructure?.hasBlog || false,
-    hasEcommerce: data.websiteStructure?.hasEcommerce || false
-  });
-  const isBusinessType = data.websiteType?.id === 'business' || data.websiteType?.id === 'ecommerce';
-  const isPersonalType = data.websiteType?.id === 'personal' || data.websiteType?.id === 'portfolio';
-  const isEcommerceType = data.websiteType?.id === 'ecommerce';
+
+  const isHealthcareCategory = data.businessCategory?.id === 'healthcare';
 
   // Update wizard data when form changes
   React.useEffect(() => {
     const structureData = {
       type: selectedType,
-      selectedSections: selectedType === 'single-page' ? selectedSections : undefined,
-      selectedPages: selectedType === 'multi-page' ? selectedPages : undefined,
-      navigationStyle,
-      hasGallery: features.hasGallery,
-      hasBlog: features.hasBlog,
-      hasEcommerce: features.hasEcommerce || isEcommerceType
+      // Remove detailed page/section selection - Hugo themes will handle this
+      selectedSections: undefined,
+      selectedPages: undefined,
+      hasGallery: undefined,
+      hasBlog: undefined,
+      hasEcommerce: undefined
     };
 
     updateData('websiteStructure', structureData);
-  }, [selectedType, selectedSections, selectedPages, navigationStyle, features, isEcommerceType, updateData]);
+  }, [selectedType, updateData]);
 
   const structureTypes = [
     {
@@ -70,7 +42,9 @@ const Step8WebsiteStructure: React.FC = () => {
       icon: FileText,
       pros: ['Fast loading', 'Great for mobile', 'Focused message', 'Easy to maintain'],
       cons: ['Limited content space', 'Less SEO opportunities'],
-      bestFor: ['Small businesses', 'Personal portfolios', 'Event pages', 'Landing pages'],
+      bestFor: isHealthcareCategory 
+        ? ['Small practices', 'Specialists', 'Single location clinics', 'Simple service offerings']
+        : ['Small businesses', 'Personal portfolios', 'Event pages', 'Landing pages'],
       popular: true
     },
     {
@@ -80,128 +54,16 @@ const Step8WebsiteStructure: React.FC = () => {
       icon: Grid3X3,
       pros: ['More content space', 'Better SEO', 'Organized content', 'Scalable'],
       cons: ['More complex', 'Longer load times', 'More maintenance'],
-      bestFor: ['Large businesses', 'Content-heavy sites', 'E-commerce', 'Blogs'],
+      bestFor: isHealthcareCategory 
+        ? ['Large practices', 'Multi-specialty clinics', 'Hospital systems', 'Extensive services']
+        : ['Large businesses', 'Content-heavy sites', 'E-commerce', 'Blogs'],
       popular: false
     }
   ];
 
-  const getSectionOptions = () => {
-    const baseSections = [
-      { id: 'hero', name: 'Hero/Welcome', icon: Home, required: true, description: 'Main introduction section' },
-      { id: 'about', name: 'About', icon: Info, required: true, description: 'About you/your business' },
-      { id: 'contact', name: 'Contact', icon: Mail, required: true, description: 'Contact information and form' }
-    ];
-
-    const businessSections = [
-      { id: 'services', name: 'Services', icon: Briefcase, required: false, description: 'Services you offer' },
-      { id: 'testimonials', name: 'Testimonials', icon: Star, required: false, description: 'Customer reviews' },
-      { id: 'team', name: 'Team', icon: Users, required: false, description: 'Team member profiles' },
-      { id: 'gallery', name: 'Gallery', icon: Image, required: false, description: 'Photo gallery' },
-      { id: 'blog', name: 'Blog Preview', icon: MessageSquare, required: false, description: 'Recent blog posts' }
-    ];
-
-    const personalSections = [
-      { id: 'portfolio', name: 'Portfolio', icon: Briefcase, required: false, description: 'Your work showcase' },
-      { id: 'skills', name: 'Skills', icon: Star, required: false, description: 'Your expertise' },
-      { id: 'experience', name: 'Experience', icon: Users, required: false, description: 'Work history' },
-      { id: 'gallery', name: 'Gallery', icon: Image, required: false, description: 'Photo gallery' }
-    ];
-
-    if (isBusinessType) {
-      return [...baseSections, ...businessSections];
-    } else if (isPersonalType) {
-      return [...baseSections, ...personalSections];
-    } else {
-      return baseSections;
-    }
-  };
-
-  const getPageOptions = () => {
-    const basePages = [
-      { id: 'home', name: 'Home', icon: Home, required: true, description: 'Main landing page' },
-      { id: 'about', name: 'About', icon: Info, required: true, description: 'About page' },
-      { id: 'contact', name: 'Contact', icon: Mail, required: true, description: 'Contact page' }
-    ];
-
-    const businessPages = [
-      { id: 'services', name: 'Services', icon: Briefcase, required: false, description: 'Services page' },
-      { id: 'portfolio', name: 'Portfolio', icon: Image, required: false, description: 'Work showcase' },
-      { id: 'team', name: 'Team', icon: Users, required: false, description: 'Team page' },
-      { id: 'blog', name: 'Blog', icon: MessageSquare, required: false, description: 'Blog section' },
-      { id: 'testimonials', name: 'Testimonials', icon: Star, required: false, description: 'Customer reviews' }
-    ];
-
-    const ecommercePages = [
-      { id: 'products', name: 'Products', icon: ShoppingCart, required: true, description: 'Product catalog' },
-      { id: 'cart', name: 'Shopping Cart', icon: ShoppingCart, required: true, description: 'Cart and checkout' }
-    ];
-
-    const personalPages = [
-      { id: 'portfolio', name: 'Portfolio', icon: Briefcase, required: false, description: 'Work showcase' },
-      { id: 'resume', name: 'Resume', icon: FileText, required: false, description: 'Resume/CV page' },
-      { id: 'blog', name: 'Blog', icon: MessageSquare, required: false, description: 'Personal blog' }
-    ];
-
-    let pages = [...basePages];
-    
-    if (isEcommerceType) {
-      pages = [...pages, ...ecommercePages, ...businessPages];
-    } else if (isBusinessType) {
-      pages = [...pages, ...businessPages];
-    } else if (isPersonalType) {
-      pages = [...pages, ...personalPages];
-    }
-
-    return pages;
-  };
-
-  const navigationStyles = [
-    { id: 'horizontal', name: 'Horizontal Top', icon: Menu, description: 'Traditional top navigation bar' },
-    { id: 'vertical', name: 'Vertical Side', icon: Layers, description: 'Side navigation menu' },
-    { id: 'hamburger', name: 'Mobile Hamburger', icon: Grid3X3, description: 'Collapsible mobile-first menu' }
-  ];
-
   const handleTypeSelect = (type: 'single-page' | 'multi-page') => {
     setSelectedType(type);
-    
-    // Auto-select required items
-    if (type === 'single-page') {
-      const requiredSections = getSectionOptions()
-        .filter(section => section.required)
-        .map(section => section.id);
-      setSelectedSections(requiredSections);
-    } else {
-      const requiredPages = getPageOptions()
-        .filter(page => page.required)
-        .map(page => page.id);
-      setSelectedPages(requiredPages);
-    }
   };
-
-  const handleSectionToggle = (sectionId: string) => {
-    const section = getSectionOptions().find(s => s.id === sectionId);
-    if (section?.required) return; // Don't allow toggling required sections
-
-    setSelectedSections(prev =>
-      prev.includes(sectionId)
-        ? prev.filter(id => id !== sectionId)
-        : [...prev, sectionId]
-    );
-  };
-
-  const handlePageToggle = (pageId: string) => {
-    const page = getPageOptions().find(p => p.id === pageId);
-    if (page?.required) return; // Don't allow toggling required pages
-
-    setSelectedPages(prev =>
-      prev.includes(pageId)
-        ? prev.filter(id => id !== pageId)
-        : [...prev, pageId]
-    );
-  };
-
-  const sectionOptions = getSectionOptions();
-  const pageOptions = getPageOptions();
 
   return (
     <div className="space-y-8">
@@ -210,11 +72,14 @@ const Step8WebsiteStructure: React.FC = () => {
         <div className="flex items-center justify-center space-x-2 mb-2">
           <Layout className="w-6 h-6 text-blue-600" />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Choose Your Website Structure
+            {isHealthcareCategory ? "Choose Your Practice Website Structure" : "Choose Your Website Structure"}
           </h1>
         </div>
         <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          Select the layout that best fits your content and goals.
+          {isHealthcareCategory 
+            ? "Select the layout that best fits your practice and patient needs. The Hugo theme will handle all the specific pages and sections."
+            : "Select the layout that best fits your content and goals. The Hugo theme will handle all the specific pages and sections."
+          }
         </p>
       </div>
 
@@ -333,196 +198,6 @@ const Step8WebsiteStructure: React.FC = () => {
         </div>
       </div>
 
-      {/* Content Selection */}
-      {selectedType && (
-        <div className="space-y-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <Navigation className="w-5 h-5 mr-2 text-green-600" />
-            {selectedType === 'single-page' ? 'Page Sections' : 'Website Pages'}
-          </h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(selectedType === 'single-page' ? sectionOptions : pageOptions).map((item) => {
-              const isSelected = selectedType === 'single-page' 
-                ? selectedSections.includes(item.id)
-                : selectedPages.includes(item.id);
-              const IconComponent = item.icon;
-
-              return (
-                <Card
-                  key={item.id}
-                  className={cn(
-                    "cursor-pointer transition-all duration-200 p-4",
-                    item.required && "opacity-100 cursor-default",
-                    isSelected 
-                      ? "border-green-500 bg-green-50 dark:bg-green-900/20 ring-1 ring-green-200 dark:ring-green-800" 
-                      : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
-                  )}
-                  onClick={() => 
-                    selectedType === 'single-page' 
-                      ? handleSectionToggle(item.id)
-                      : handlePageToggle(item.id)
-                  }
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="mt-1">
-                      <Checkbox
-                        checked={isSelected}
-                        disabled={item.required}
-                        className="pointer-events-none"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <IconComponent className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                        <span className={cn(
-                          "font-medium text-sm",
-                          isSelected ? "text-green-900 dark:text-green-100" : "text-gray-900 dark:text-white"
-                        )}>
-                          {item.name}
-                        </span>
-                        {item.required && (
-                          <Badge variant="secondary" className="text-xs">Required</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Navigation Style */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-          <Menu className="w-5 h-5 mr-2 text-purple-600" />
-          Navigation Style
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {navigationStyles.map((style) => {
-            const isSelected = navigationStyle === style.id;
-            const IconComponent = style.icon;
-
-            return (
-              <Card
-                key={style.id}
-                className={cn(
-                  "cursor-pointer transition-all duration-200 p-4",
-                  isSelected 
-                    ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-800" 
-                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-purple-300 dark:hover:border-purple-600"
-                )}
-                onClick={() => setNavigationStyle(style.id)}
-              >
-                <div className="text-center space-y-2">
-                  <div className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center mx-auto",
-                    isSelected ? "bg-purple-100 dark:bg-purple-800" : "bg-gray-100 dark:bg-gray-700"
-                  )}>
-                    <IconComponent className={cn(
-                      "w-5 h-5",
-                      isSelected ? "text-purple-600 dark:text-purple-400" : "text-gray-600 dark:text-gray-400"
-                    )} />
-                  </div>
-                  <div>
-                    <h4 className={cn(
-                      "font-medium text-sm",
-                      isSelected ? "text-purple-900 dark:text-purple-100" : "text-gray-900 dark:text-white"
-                    )}>
-                      {style.name}
-                    </h4>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      {style.description}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Additional Features */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-          <Star className="w-5 h-5 mr-2 text-orange-600" />
-          Additional Features
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-4">
-            <div className="flex items-start space-x-3">
-              <div className="mt-1">
-                <Checkbox
-                  id="gallery"
-                  checked={features.hasGallery}
-                  onCheckedChange={(checked) => setFeatures(prev => ({ ...prev, hasGallery: checked as boolean }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="gallery" className="font-medium text-sm text-gray-900 dark:text-white flex items-center">
-                  <Image className="w-4 h-4 mr-2" />
-                  Photo Gallery
-                </Label>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  Showcase images or portfolio pieces
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-start space-x-3">
-              <div className="mt-1">
-                <Checkbox
-                  id="blog"
-                  checked={features.hasBlog}
-                  onCheckedChange={(checked) => setFeatures(prev => ({ ...prev, hasBlog: checked as boolean }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="blog" className="font-medium text-sm text-gray-900 dark:text-white flex items-center">
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  Blog Section
-                </Label>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  Share articles and updates
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          {!isEcommerceType && (
-            <Card className="p-4">
-              <div className="flex items-start space-x-3">
-                <div className="mt-1">
-                  <Checkbox
-                    id="ecommerce"
-                    checked={features.hasEcommerce}
-                    onCheckedChange={(checked) => setFeatures(prev => ({ ...prev, hasEcommerce: checked as boolean }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="ecommerce" className="font-medium text-sm text-gray-900 dark:text-white flex items-center">
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    E-commerce
-                  </Label>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Sell products online
-                  </p>
-                </div>
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
-
       {/* Structure Summary */}
       {selectedType && (
         <motion.div
@@ -532,49 +207,50 @@ const Step8WebsiteStructure: React.FC = () => {
         >
           <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center">
             <Layout className="w-5 h-5 mr-2" />
-            Your Website Structure Summary
+            {isHealthcareCategory ? 'Your Practice Website Structure Summary' : 'Your Website Structure Summary'}
           </h4>
           
           <div className="space-y-3 text-sm">
             <div>
               <span className="font-medium text-blue-800 dark:text-blue-200">Structure Type:</span>
-              <span className="text-blue-700 dark:text-blue-300 ml-2">{selectedType === 'single-page' ? 'Single Page' : 'Multi-Page'}</span>
-            </div>
-            
-            <div>
-              <span className="font-medium text-blue-800 dark:text-blue-200">Navigation:</span>
-              <span className="text-blue-700 dark:text-blue-300 ml-2">{navigationStyles.find(s => s.id === navigationStyle)?.name}</span>
-            </div>
-            
-            <div>
-              <span className="font-medium text-blue-800 dark:text-blue-200">
-                {selectedType === 'single-page' ? 'Sections' : 'Pages'}:
+              <span className="text-blue-700 dark:text-blue-300 ml-2">
+                {selectedType === 'single-page' ? 'Single Page' : 'Multi-Page'}
               </span>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {(selectedType === 'single-page' ? selectedSections : selectedPages).map((item, index) => {
-                  const option = (selectedType === 'single-page' ? sectionOptions : pageOptions).find(opt => opt.id === item);
-                  return (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {option?.name}
-                    </Badge>
-                  );
-                })}
-              </div>
             </div>
             
-            {(features.hasGallery || features.hasBlog || features.hasEcommerce) && (
-              <div>
-                <span className="font-medium text-blue-800 dark:text-blue-200">Additional Features:</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {features.hasGallery && <Badge variant="secondary" className="text-xs">Photo Gallery</Badge>}
-                  {features.hasBlog && <Badge variant="secondary" className="text-xs">Blog</Badge>}
-                  {features.hasEcommerce && <Badge variant="secondary" className="text-xs">E-commerce</Badge>}
-                </div>
-              </div>
-            )}
+            <div className="bg-blue-100 dark:bg-blue-800/30 rounded-lg p-3 mt-4">
+              <p className="text-blue-800 dark:text-blue-200 text-sm">
+                <strong>Note:</strong> The Hugo theme will automatically generate the appropriate pages and sections based on your business type and content. 
+                {isHealthcareCategory && ' This includes medical services, team profiles, appointment booking, and other healthcare-specific features.'}
+              </p>
+            </div>
           </div>
         </motion.div>
       )}
+
+      {/* Help Text */}
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+        <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">
+          {isHealthcareCategory ? '🏥 Structure Guidance:' : '💡 Structure Tips:'}
+        </h4>
+        <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+          {isHealthcareCategory ? (
+            <>
+              <li>• Single-page works well for small practices with focused services</li>
+              <li>• Multi-page is better for large practices with many specialties</li>
+              <li>• The Hugo theme will create appropriate healthcare pages automatically</li>
+              <li>• Your content from previous steps determines what pages are included</li>
+            </>
+          ) : (
+            <>
+              <li>• Single-page is great for simple, focused websites</li>
+              <li>• Multi-page provides more space for complex content</li>
+              <li>• The Hugo theme will generate pages based on your business type</li>
+              <li>• You can always modify the structure after generation</li>
+            </>
+          )}
+        </ul>
+      </div>
     </div>
   );
 };

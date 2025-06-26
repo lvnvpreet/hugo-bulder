@@ -107,13 +107,7 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
       if (!data.websiteStructure?.type) {
         errors.push('Please select a website structure type');
       }
-      if (data.websiteStructure?.type === 'single-page' && 
-          (!data.websiteStructure.selectedSections || data.websiteStructure.selectedSections.length < 3)) {
-        errors.push('Please select at least the required sections');
-      }
-      if (data.websiteStructure?.type === 'multi-page' &&
-          (!data.websiteStructure.selectedPages || data.websiteStructure.selectedPages.length < 3)) {
-        errors.push('Please select at least the required pages');      }
+      // Removed validation for selectedSections/selectedPages since Hugo themes handle this
       break;
       case 9:
       // UPDATED: Remove theme selection validation since we use auto-detection

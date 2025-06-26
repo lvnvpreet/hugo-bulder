@@ -17,7 +17,10 @@ const Step3BusinessInfo: React.FC = () => {
     description: data.businessInfo?.description || '',
     tagline: data.businessInfo?.tagline || '',
     established: data.businessInfo?.established || undefined,
-    employeeCount: data.businessInfo?.employeeCount || ''
+    employeeCount: data.businessInfo?.employeeCount || '',
+    selectedSubcategory: data.businessCategory?.selectedSubCategory?.id || '',
+    specialization: '',
+    additionalFields: {} as Record<string, string>
   });
 
   const [charCounts, setCharCounts] = React.useState({
@@ -37,6 +40,10 @@ const Step3BusinessInfo: React.FC = () => {
     { value: '500+', label: 'Enterprise (500+)' }
   ];
 
+  // Get available subcategories and selected subcategory info
+  const availableSubcategories = data.businessCategory?.subCategories || [];
+  const selectedSubcategoryData = availableSubcategories.find(sub => sub.id === formData.selectedSubcategory);
+
   // Real-time form validation and updates
   React.useEffect(() => {
     const businessInfoData = {
@@ -44,11 +51,25 @@ const Step3BusinessInfo: React.FC = () => {
       description: formData.description,
       tagline: formData.tagline || undefined,
       established: formData.established || undefined,
-      employeeCount: formData.employeeCount || undefined
+      employeeCount: formData.employeeCount || undefined,
+      selectedSubcategory: selectedSubcategoryData || undefined,
+      specialization: formData.specialization || undefined,
+      additionalFields: formData.additionalFields
     };
 
     updateData('businessInfo', businessInfoData);
   }, [formData, updateData]);
+
+  // Separate effect to update businessCategory selectedSubCategory
+  React.useEffect(() => {
+    if (selectedSubcategoryData && data.businessCategory && 
+        data.businessCategory.selectedSubCategory?.id !== selectedSubcategoryData.id) {
+      updateData('businessCategory', {
+        ...data.businessCategory,
+        selectedSubCategory: selectedSubcategoryData
+      });
+    }
+  }, [formData.selectedSubcategory, data.businessCategory, updateData]);
 
   const handleInputChange = (field: string, value: string | number) => {
     setFormData(prev => ({
@@ -138,6 +159,99 @@ const Step3BusinessInfo: React.FC = () => {
               </p>
             )}
           </div>
+
+          {/* Subcategory Selection - Only for business types with subcategories */}
+          {isBusinessType && availableSubcategories.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="subcategory" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Type of {data.businessCategory?.name || 'Business'} <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.selectedSubcategory}
+                onValueChange={(value) => handleInputChange('selectedSubcategory', value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={`Select your ${data.businessCategory?.industry?.toLowerCase() || 'business'} type`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSubcategories.map((subcategory) => (
+                    <SelectItem key={subcategory.id} value={subcategory.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{subcategory.name}</span>
+                        <span className="text-xs text-gray-500">{subcategory.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedSubcategoryData && (
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  🎯 Great! We'll customize your website with {selectedSubcategoryData.name.toLowerCase()}-specific features.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Specialization Selection - Only if subcategory has specializations */}
+          {selectedSubcategoryData?.specializations && selectedSubcategoryData.specializations.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="specialization" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Specialization <span className="text-gray-400">(Optional)</span>
+              </Label>
+              <Select
+                value={formData.specialization}
+                onValueChange={(value) => handleInputChange('specialization', value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select your specialization" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedSubcategoryData.specializations.map((specialization) => (
+                    <SelectItem key={specialization} value={specialization}>
+                      {specialization}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Dynamic Required Fields - Based on selected subcategory */}
+          {selectedSubcategoryData?.requiredFields && selectedSubcategoryData.requiredFields.length > 0 && (
+            <div className="space-y-4">
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  Additional Information for {selectedSubcategoryData.name}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedSubcategoryData.requiredFields.map((field) => (
+                    <div key={field} className="space-y-2">
+                      <Label htmlFor={field} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {field} <span className="text-gray-400">(Optional)</span>
+                      </Label>
+                      <Input
+                        id={field}
+                        type="text"
+                        value={formData.additionalFields[field] || ''}
+                        onChange={(e) => {
+                          const newAdditionalFields = {
+                            ...formData.additionalFields,
+                            [field]: e.target.value
+                          };
+                          setFormData(prev => ({
+                            ...prev,
+                            additionalFields: newAdditionalFields
+                          }));
+                        }}
+                        placeholder={`Enter your ${field.toLowerCase()}`}
+                        className="w-full"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Description Field */}
           <div className="space-y-2">
@@ -266,6 +380,18 @@ const Step3BusinessInfo: React.FC = () => {
                 {formData.tagline && (
                   <p className="text-blue-600 dark:text-blue-400 font-medium text-sm">{formData.tagline}</p>
                 )}
+                {selectedSubcategoryData && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-xs">
+                      {selectedSubcategoryData.name}
+                    </Badge>
+                    {formData.specialization && (
+                      <Badge variant="secondary" className="text-xs">
+                        {formData.specialization}
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </div>
               
               <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
@@ -291,17 +417,95 @@ const Step3BusinessInfo: React.FC = () => {
             </div>
           </Card>
         </motion.div>
+      )}
+
+      {/* Services Preview - Only if subcategory selected */}
+      {selectedSubcategoryData && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <Card className="p-6 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-200 dark:border-green-800">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2 mb-3">
+                <div className="w-8 h-8 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center">
+                  <Building2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                </div>
+                <h3 className="font-semibold text-green-900 dark:text-green-100">
+                  Website Features for {selectedSubcategoryData.name}
+                </h3>
+              </div>
+              
+              <p className="text-green-700 dark:text-green-300 text-sm">
+                Based on your selection, we'll include these {selectedSubcategoryData.name.toLowerCase()}-specific features:
+              </p>
+              
+              <div className="flex flex-wrap gap-2">
+                {selectedSubcategoryData.services.map((service, index) => (
+                  <Badge key={index} variant="outline" className="text-xs border-green-300 text-green-700">
+                    ✓ {service}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </motion.div>
       )}      {/* Tips */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-        <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">💡 Tips for a great {isBusinessType ? 'business' : 'personal'} description:</h4>
+        <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">
+          💡 Tips for {selectedSubcategoryData ? `${selectedSubcategoryData.name.toLowerCase()}` : 'your business'}:
+        </h4>
         <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
           {isBusinessType ? (
-            <>
-              <li>• Clearly explain what your business does and who you serve</li>
-              <li>• Mention what makes you different from competitors</li>
-              <li>• Include your mission, values, or what drives you</li>
-              <li>• Keep it engaging but professional</li>
-            </>
+            selectedSubcategoryData ? (
+              // Subcategory-specific tips
+              selectedSubcategoryData.id === 'doctors' ? (
+                <>
+                  <li>• Highlight your medical specializations and expertise</li>
+                  <li>• Mention your medical education and certifications</li>
+                  <li>• Include patient care philosophy and approach</li>
+                  <li>• Consider mentioning accepted insurance plans</li>
+                </>
+              ) : selectedSubcategoryData.id === 'dentists' ? (
+                <>
+                  <li>• Showcase dental services and procedures you offer</li>
+                  <li>• Mention any specialized dental technology you use</li>
+                  <li>• Highlight patient comfort and care approach</li>
+                  <li>• Consider including before/after treatment examples</li>
+                </>
+              ) : selectedSubcategoryData.id === 'therapists' ? (
+                <>
+                  <li>• Describe your therapy approach and methodologies</li>
+                  <li>• Mention areas of specialization and expertise</li>
+                  <li>• Highlight patient outcomes and success stories</li>
+                  <li>• Include information about treatment plans</li>
+                </>
+              ) : selectedSubcategoryData.id === 'clinics' ? (
+                <>
+                  <li>• List all medical services and specialties offered</li>
+                  <li>• Highlight your medical staff and their qualifications</li>
+                  <li>• Mention modern equipment and facilities</li>
+                  <li>• Include information about urgent care availability</li>
+                </>
+              ) : (
+                // Default business tips
+                <>
+                  <li>• Clearly explain what your business does and who you serve</li>
+                  <li>• Mention what makes you different from competitors</li>
+                  <li>• Include your mission, values, or what drives you</li>
+                  <li>• Keep it engaging but professional</li>
+                </>
+              )
+            ) : (
+              // General business tips
+              <>
+                <li>• Clearly explain what your business does and who you serve</li>
+                <li>• Mention what makes you different from competitors</li>
+                <li>• Include your mission, values, or what drives you</li>
+                <li>• Keep it engaging but professional</li>
+              </>
+            )
           ) : (
             <>
               <li>• Highlight your key skills and expertise areas</li>

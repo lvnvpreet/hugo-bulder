@@ -5,6 +5,7 @@ export interface WizardData {
     id: string;           // 'business', 'personal', 'blog', 'portfolio', 'ecommerce'
     category: string;     // Display category
     description: string;
+    allowedCategories?: string[]; // Array of business category IDs allowed for this website type
   } | null;
 
   // Step 2: Business Category (only if business)
@@ -12,7 +13,8 @@ export interface WizardData {
     id: string;
     name: string;
     industry: string;
-    services: string[];   // Default services for this category
+    subCategories: SubCategory[]; // Available subcategories for this category
+    selectedSubCategory?: SubCategory; // User's selected subcategory (filled in later step)
   } | null;
 
   // Step 3: Business Information
@@ -22,6 +24,9 @@ export interface WizardData {
     tagline?: string;
     established?: number;
     employeeCount?: string;
+    selectedSubcategory?: SubCategory; // Selected subcategory details
+    specialization?: string; // Selected specialization
+    additionalFields?: Record<string, string>; // Dynamic fields based on subcategory
   } | null;
 
   // Step 4: Website Purpose
@@ -178,6 +183,7 @@ export interface WebsiteType {
   description: string;
   features: string[];
   nextStep: number;
+  allowedCategories?: string[]; // Array of business category IDs allowed for this website type
 }
 
 export interface BusinessCategory {
@@ -185,8 +191,17 @@ export interface BusinessCategory {
   name: string;
   industry: string;
   description: string;
-  services: string[];
+  subCategories: SubCategory[];
   icon?: string;
+}
+
+export interface SubCategory {
+  id: string;
+  name: string;
+  description: string;
+  services: string[]; // Predefined service IDs
+  requiredFields?: string[]; // Additional form fields
+  specializations?: string[]; // Further refinements
 }
 
 export interface ServiceTemplate {
