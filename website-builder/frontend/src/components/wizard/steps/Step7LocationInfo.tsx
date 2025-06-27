@@ -1,438 +1,588 @@
-import * as React from 'react';
+// =============================================================================
+// STEP 7: LOCATION & CONTACT INFORMATION (DARK MODE FIXED)
+// =============================================================================
+
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useWizardStore } from '../../../store/wizardStore';
 import { Card } from '../../ui/card';
-import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
-import { Checkbox } from '../../ui/checkbox';
-import { Button } from '../../ui/button';
-import { Badge } from '../../ui/badge';
-import { 
-  MapPin, 
-  Globe, 
-  Building, 
-  Navigation,
-  Plus,
-  X,
-  Check,
-  AlertCircle
-} from 'lucide-react';
 import { cn } from '../../../utils';
 
 const Step7LocationInfo: React.FC = () => {
   const { data, updateData } = useWizardStore();
-  const [formData, setFormData] = React.useState({
-    address: data.locationInfo?.address || '',
-    city: data.locationInfo?.city || '',
-    state: data.locationInfo?.state || '',
-    zipCode: data.locationInfo?.zipCode || '',
-    country: data.locationInfo?.country || 'United States',
-    serviceAreas: data.locationInfo?.serviceAreas || [],
-    isOnlineOnly: data.locationInfo?.isOnlineOnly || false
+
+  interface Address {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+    coordinates?: { lat: number; lng: number };
+  }
+
+  interface ContactInfo {
+    email: string;
+    phone: string;
+    website: string;
+    socialMedia: {
+      facebook: string;
+      instagram: string;
+      twitter: string;
+      linkedin: string;
+    };
+  }
+
+  interface LocationData {
+    hasPhysicalLocation: boolean;
+    address: Address;
+    serviceAreas: string[];
+    isOnlineOnly: boolean;
+    locationType: 'physical' | 'online' | 'both'; // Add this line
+    contactInfo: ContactInfo;
+  }
+
+  const [locationData, setLocationData] = useState<LocationData>({
+    hasPhysicalLocation: data.locationInfo?.hasPhysicalLocation ?? true,
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: '',
+      ...(data.locationInfo?.address || {})
+    },
+    serviceAreas: data.locationInfo?.serviceAreas && Array.isArray(data.locationInfo.serviceAreas)
+      ? data.locationInfo.serviceAreas
+      : [''],
+    isOnlineOnly: data.locationInfo?.isOnlineOnly ?? false,
+    locationType: data.locationInfo?.locationType || 'physical', // Add this line
+    // NEW: Contact Information
+    contactInfo: {
+      email: '',
+      phone: '',
+      website: '',
+      socialMedia: {
+        facebook: '',
+        instagram: '',
+        twitter: '',
+        linkedin: ''
+      },
+      ...(data.locationInfo?.contactInfo || {})
+    }
   });
 
-  const [newServiceArea, setNewServiceArea] = React.useState('');
-  const [errors, setErrors] = React.useState<string[]>([]);
-  const isBusinessType = data.websiteType?.id === 'business' || data.websiteType?.id === 'ecommerce';
-  const isHealthcareCategory = data.businessCategory?.id === 'healthcare';
-
-  // Update wizard data when form changes
-  React.useEffect(() => {
-    const locationData = {
-      address: formData.address,
-      city: formData.city,
-      state: formData.state,
-      zipCode: formData.zipCode,
-      country: formData.country,
-      serviceAreas: formData.serviceAreas,
-      isOnlineOnly: formData.isOnlineOnly,
-      coordinates: undefined // Could be added later with geocoding
+  const handleLocationTypeChange = (type: 'physical' | 'online' | 'both') => {
+    const newData = {
+      ...locationData,
+      locationType: type, // Store the exact selection
+      hasPhysicalLocation: type === 'physical' || type === 'both',
+      isOnlineOnly: type === 'online'
     };
 
-    updateData('locationInfo', locationData);
-  }, [formData, updateData]);
+    console.log(newData);
 
-  const handleInputChange = (field: string, value: string | boolean | string[]) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  const handleAddressChange = (field: string, value: string) => {
+    const newData = {
+      ...locationData,
+      address: {
+        ...(locationData.address || {}), // Ensure address is an object
+        [field]: value
+      }
+    };
+
+    console.log(newData);
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  const handleServiceAreaChange = (index: number, value: string) => {
+    const currentAreas = Array.isArray(locationData.serviceAreas) ? locationData.serviceAreas : [''];
+    const newAreas = [...currentAreas]; // Ensure serviceAreas is an array
+    newAreas[index] = value;
+
+    const newData = {
+      ...locationData,
+      serviceAreas: newAreas
+    };
+
+    console.log(newData);
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  const addServiceArea = () => {
+    const currentAreas = Array.isArray(locationData.serviceAreas) ? locationData.serviceAreas : [''];
+    const newData = {
+      ...locationData,
+      serviceAreas: [...currentAreas, '']
+    };
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  const removeServiceArea = (index: number) => {
+    const currentAreas = Array.isArray(locationData.serviceAreas) ? locationData.serviceAreas : [''];
+    const newData = {
+      ...locationData,
+      serviceAreas: currentAreas.filter((_, i) => i !== index)
+    };
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  // NEW: Contact Info Handlers
+  const handleContactInfoChange = (field: string, value: string) => {
+    const newData = {
+      ...locationData,
+      contactInfo: {
+        ...(locationData.contactInfo || {}), // Ensure contactInfo is an object
+        [field]: value
+      }
+    };
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  const handleSocialMediaChange = (platform: string, value: string) => {
+    const newData = {
+      ...locationData,
+      contactInfo: {
+        ...(locationData.contactInfo || {}), // Ensure contactInfo is an object
+        socialMedia: {
+          ...(locationData.contactInfo?.socialMedia || {}), // Ensure socialMedia is an object
+          [platform]: value
+        }
+      }
+    };
+
+    setLocationData(newData);
+    updateData('locationInfo', newData);
+  };
+
+  // Validate email format
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Validation function for the step
+  const validateStep = () => {
+    const errors: string[] = [];
     
-    // Clear errors when user starts typing
-    if (errors.length > 0) {
-      setErrors([]);
+    // Validate email if provided
+    if (locationData.contactInfo?.email && !isValidEmail(locationData.contactInfo.email)) {
+      errors.push('Please enter a valid email address');
     }
-  };
-
-  const handleAddServiceArea = () => {
-    if (newServiceArea.trim() && !formData.serviceAreas.includes(newServiceArea.trim())) {
-      const updatedAreas = [...formData.serviceAreas, newServiceArea.trim()];
-      handleInputChange('serviceAreas', updatedAreas);
-      setNewServiceArea('');
+    
+    // Validate required fields for physical locations
+    if (locationData.hasPhysicalLocation) {
+      if (!locationData.address?.city?.trim()) {
+        errors.push('City is required for physical locations');
+      }
+      if (!locationData.address?.state?.trim()) {
+        errors.push('State/Province is required for physical locations');
+      }
     }
+    
+    return errors;
   };
 
-  const handleRemoveServiceArea = (areaToRemove: string) => {
-    const updatedAreas = formData.serviceAreas.filter(area => area !== areaToRemove);
-    handleInputChange('serviceAreas', updatedAreas);
-  };
+  // Use effect to validate when data changes
+  useEffect(() => {
+    const errors = validateStep();
+    // You can use this errors array to show validation messages
+    // or pass it to your wizard store for step validation
+  }, [locationData]);
 
-  const suggestedServiceAreas = [
-    'Greater Metropolitan Area',
-    'Surrounding Counties',
-    'Statewide',
-    'Regional (Multi-state)',
-    'National',
-    'International'
-  ];
-  const getLocationTypeConfig = () => {
-    if (isHealthcareCategory && isBusinessType) {
-      return {
-        title: 'Where is your practice located?',
-        description: 'Help patients find your practice and understand your service areas.',
-        showServiceAreas: true,
-        addressLabel: 'Practice Address',
-        addressPlaceholder: 'Enter your practice address',
-        onlineLabel: 'Telehealth/Remote Practice Only',
-        onlineDescription: 'Check this if your practice operates entirely through telehealth without a physical location'
-      };
-    } else if (isBusinessType) {
-      return {
-        title: 'Where is your business located?',
-        description: 'Help customers find you and understand your service areas.',
-        showServiceAreas: true,
-        addressLabel: 'Business Address',
-        addressPlaceholder: 'Enter your business address',
-        onlineLabel: 'Online/Remote Business Only',
-        onlineDescription: 'Check this if your business operates entirely online without a physical location'
-      };
-    } else {
-      return {
-        title: 'Where are you based?',
-        description: 'This helps potential clients or collaborators understand your location.',
-        showServiceAreas: false,
-        addressLabel: 'Location',
-        addressPlaceholder: 'City, State or Region',
-        onlineLabel: 'Remote Work Only',
-        onlineDescription: 'Check this if you work remotely and don\'t need to specify a physical location'
-      };
+  // Format phone number as user types
+  const formatPhoneNumber = (value: string) => {
+    const phoneNumber = value.replace(/[^\d]/g, '');
+    const phoneNumberLength = phoneNumber.length;
+
+    if (phoneNumberLength < 4) return phoneNumber;
+    if (phoneNumberLength < 7) {
+      return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
     }
+    return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
   };
 
-  const config = getLocationTypeConfig();
+  const handlePhoneChange = (value: string) => {
+    const formatted = formatPhoneNumber(value);
+    handleContactInfoChange('phone', formatted);
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <div className="flex items-center justify-center space-x-2 mb-2">
-          <MapPin className="w-6 h-6 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {config.title}
-          </h1>
-        </div>
-        <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          {config.description}
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+          Location & Contact Information
+        </h2>
+        <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+          Help customers find and contact you by providing location and contact details.
+          This information improves local SEO and makes it easy for customers to reach you.
         </p>
       </div>
 
-      {/* Online Only Toggle */}
-      <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-800">
-        <div className="flex items-start space-x-3">
-          <div className="mt-1">
-            <Checkbox
-              id="online-only"
-              checked={formData.isOnlineOnly}
-              onCheckedChange={(checked) => handleInputChange('isOnlineOnly', checked as boolean)}
-            />
+      {/* Location Type Selection */}
+      <Card className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Business Location Type
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            onClick={() => handleLocationTypeChange('physical')}
+            className={cn(
+              "p-4 border rounded-lg text-center transition-all duration-200",
+              locationData.locationType === 'physical'
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+            )}
+          >
+            <div className="text-2xl mb-2">🏢</div>
+            <h4 className="font-medium text-gray-900 dark:text-white">Physical Location</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Customers visit your location</p>
+          </button>
+
+          <button
+            onClick={() => handleLocationTypeChange('online')}
+            className={cn(
+              "p-4 border rounded-lg text-center transition-all duration-200",
+              locationData.locationType === 'online'
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+            )}
+          >
+            <div className="text-2xl mb-2">💻</div>
+            <h4 className="font-medium text-gray-900 dark:text-white">Online Only</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Remote services only</p>
+          </button>
+
+          <button
+            onClick={() => handleLocationTypeChange('both')}
+            className={cn(
+              "p-4 border rounded-lg text-center transition-all duration-200",
+              locationData.locationType === 'both'
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+            )}
+          >
+            <div className="text-2xl mb-2">🌐</div>
+            <h4 className="font-medium text-gray-900 dark:text-white">Both</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Physical + online services</p>
+          </button>
+        </div>
+      </Card>
+
+      {/* Physical Address */}
+      {locationData.hasPhysicalLocation && (
+        <Card className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Business Address
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Street Address
+              </label>
+              <input
+                type="text"
+                value={locationData.address.street}
+                onChange={(e) => handleAddressChange('street', e.target.value)}
+                placeholder="123 Main Street"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                City
+              </label>
+              <input
+                type="text"
+                value={locationData.address.city}
+                onChange={(e) => handleAddressChange('city', e.target.value)}
+                placeholder="City"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                State/Province
+              </label>
+              <input
+                type="text"
+                value={locationData.address.state}
+                onChange={(e) => handleAddressChange('state', e.target.value)}
+                placeholder="State"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                ZIP/Postal Code
+              </label>
+              <input
+                type="text"
+                value={locationData.address.zipCode}
+                onChange={(e) => handleAddressChange('zipCode', e.target.value)}
+                placeholder="12345"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Country
+              </label>
+              <input
+                type="text"
+                value={locationData.address.country}
+                onChange={(e) => handleAddressChange('country', e.target.value)}
+                placeholder="United States"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
           </div>
-          <div className="flex-1">
-            <Label htmlFor="online-only" className="text-base font-medium text-gray-900 dark:text-white flex items-center">
-              <Globe className="w-4 h-4 mr-2" />
-              {config.onlineLabel}
-            </Label>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              {config.onlineDescription}
+        </Card>
+      )}
+
+      {/* Contact Information */}
+      <Card className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Contact Information
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Provide ways for customers to contact you. This information will be displayed on your website.
+        </p>
+
+        <div className="space-y-6">
+          {/* Email and Phone */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Email Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={locationData.contactInfo.email}
+                onChange={(e) => handleContactInfoChange('email', e.target.value)}
+                placeholder="info@yourbusiness.com"
+                className={cn(
+                  "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400",
+                  locationData.contactInfo.email && !isValidEmail(locationData.contactInfo.email)
+                    ? "border-red-500 focus:ring-red-500"
+                    : "border-gray-300 dark:border-gray-600"
+                )}
+              />
+              {locationData.contactInfo.email && !isValidEmail(locationData.contactInfo.email) && (
+                <p className="text-red-500 text-xs mt-1">Please enter a valid email address</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Phone Number
+              </label>
+              <input
+                type="tel"
+                value={locationData.contactInfo.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                placeholder="(555) 123-4567"
+                maxLength={14}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
+          </div>
+
+          {/* Website */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+              Current Website (Optional)
+            </label>
+            <input
+              type="url"
+              value={locationData.contactInfo.website}
+              onChange={(e) => handleContactInfoChange('website', e.target.value)}
+              placeholder="www.yourbusiness.com"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              If you have an existing website, we can reference it for content ideas
             </p>
+          </div>
+
+          {/* Social Media */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              Social Media Profiles (Optional)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Facebook */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <span className="text-blue-600 dark:text-blue-400 font-semibold">f</span>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">Facebook</label>
+                  <input
+                    type="url"
+                    value={locationData.contactInfo.socialMedia.facebook}
+                    onChange={(e) => handleSocialMediaChange('facebook', e.target.value)}
+                    placeholder="https://facebook.com/yourbusiness"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                  />
+                </div>
+              </div>
+
+              {/* Instagram */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-pink-100 dark:bg-pink-900/30 rounded-lg">
+                  <span className="text-pink-600 dark:text-pink-400 font-semibold">📷</span>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">Instagram</label>
+                  <input
+                    type="url"
+                    value={locationData.contactInfo.socialMedia.instagram}
+                    onChange={(e) => handleSocialMediaChange('instagram', e.target.value)}
+                    placeholder="https://instagram.com/yourbusiness"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                  />
+                </div>
+              </div>
+
+              {/* Twitter */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-sky-100 dark:bg-sky-900/30 rounded-lg">
+                  <span className="text-sky-600 dark:text-sky-400 font-semibold">🐦</span>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">Twitter/X</label>
+                  <input
+                    type="url"
+                    value={locationData.contactInfo.socialMedia.twitter}
+                    onChange={(e) => handleSocialMediaChange('twitter', e.target.value)}
+                    placeholder="https://twitter.com/yourbusiness"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                  />
+                </div>
+              </div>
+
+              {/* LinkedIn */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <span className="text-blue-700 dark:text-blue-400 font-semibold">in</span>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">LinkedIn</label>
+                  <input
+                    type="url"
+                    value={locationData.contactInfo.socialMedia.linkedin}
+                    onChange={(e) => handleSocialMediaChange('linkedin', e.target.value)}
+                    placeholder="https://linkedin.com/company/yourbusiness"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </Card>
 
-      {/* Location Form */}
-      {!formData.isOnlineOnly && (
-        <Card className="p-6">
-          <div className="space-y-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <Building className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Physical Location
-              </h3>
-            </div>
+      {/* Service Areas */}
+      <Card className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Service Areas
+          </h3>
+          <button
+            onClick={addServiceArea}
+            className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
+          >
+            + Add Area
+          </button>
+        </div>
 
-            {/* Address */}
-            <div className="space-y-2">
-              <Label htmlFor="address" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                {config.addressLabel} <span className="text-gray-400">(Optional)</span>
-              </Label>
-              <Input
-                id="address"
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          Where do you provide services? This helps with local SEO and helps customers understand your coverage area.
+        </p>
+
+        <div className="space-y-3">
+          {(Array.isArray(locationData.serviceAreas) ? locationData.serviceAreas : ['']).map((area, index) => (
+            <div key={index} className="flex items-center space-x-3">
+              <input
                 type="text"
-                value={formData.address}
-                onChange={(e) => handleInputChange('address', e.target.value)}
-                placeholder={config.addressPlaceholder}
-                className="w-full"
+                value={area || ''}
+                onChange={(e) => handleServiceAreaChange(index, e.target.value)}
+                placeholder="e.g., Seattle, WA or 'Within 50 miles of downtown'"
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
               />
+              {(Array.isArray(locationData.serviceAreas) ? locationData.serviceAreas : ['']).length > 1 && (
+                <button
+                  onClick={() => removeServiceArea(index)}
+                  className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-1"
+                >
+                  ✕
+                </button>
+              )}
             </div>
+          ))}
+        </div>
+      </Card>
 
-            {/* City, State, Zip Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="city" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  City <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="city"
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => handleInputChange('city', e.target.value)}
-                  placeholder="City"
-                  className={cn(
-                    "w-full",
-                    errors.some(e => e.includes('City')) && "border-red-500 focus:ring-red-500"
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="state" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  State/Province <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="state"
-                  type="text"
-                  value={formData.state}
-                  onChange={(e) => handleInputChange('state', e.target.value)}
-                  placeholder="State or Province"
-                  className={cn(
-                    "w-full",
-                    errors.some(e => e.includes('State')) && "border-red-500 focus:ring-red-500"
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="zipCode" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  ZIP/Postal Code <span className="text-gray-400">(Optional)</span>
-                </Label>
-                <Input
-                  id="zipCode"
-                  type="text"
-                  value={formData.zipCode}
-                  onChange={(e) => handleInputChange('zipCode', e.target.value)}
-                  placeholder="ZIP or Postal Code"
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            {/* Country */}
-            <div className="space-y-2">
-              <Label htmlFor="country" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Country
-              </Label>
-              <Input
-                id="country"
-                type="text"
-                value={formData.country}
-                onChange={(e) => handleInputChange('country', e.target.value)}
-                placeholder="Country"
-                className="w-full"
-              />
-            </div>
-
-            {/* Error Messages */}
-            {errors.length > 0 && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  <span className="text-sm font-medium text-red-800 dark:text-red-200">Please fix the following errors:</span>
-                </div>
-                <ul className="text-sm text-red-700 dark:text-red-300 space-y-1">
-                  {errors.map((error, index) => (
-                    <li key={index}>• {error}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* Service Areas (Business Only) */}
-      {config.showServiceAreas && !formData.isOnlineOnly && (
-        <Card className="p-6">
-          <div className="space-y-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <Navigation className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {isHealthcareCategory ? 'Service Areas' : 'Service Areas'}
-              </h3>
-            </div>
-
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {isHealthcareCategory 
-                ? 'Where do you see patients? This helps patients understand if you serve their area.'
-                : 'Where do you provide your services? This helps customers understand if you serve their area.'
-              }
-            </p>
-
-            {/* Add Service Area */}
-            <div className="flex space-x-2">
-              <Input
-                type="text"
-                value={newServiceArea}
-                onChange={(e) => setNewServiceArea(e.target.value)}
-                placeholder={isHealthcareCategory 
-                  ? "Enter a service area (e.g., Downtown, Metro Area, County-wide)"
-                  : "Enter a service area (e.g., Downtown, Suburbs, Statewide)"
-                }
-                className="flex-1"
-                onKeyPress={(e) => e.key === 'Enter' && handleAddServiceArea()}
-              />
-              <Button
-                type="button"
-                onClick={handleAddServiceArea}
-                disabled={!newServiceArea.trim()}
-                className="px-4"
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
-
-            {/* Current Service Areas */}
-            {formData.serviceAreas.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Current Service Areas:
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {formData.serviceAreas.map((area, index) => (
-                    <Badge
-                      key={index}
-                      variant="secondary"
-                      className="flex items-center space-x-1"
-                    >
-                      <span>{area}</span>
-                      <button
-                        onClick={() => handleRemoveServiceArea(area)}
-                        className="ml-1 hover:text-red-600"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Suggested Service Areas */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Quick Add:
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                {suggestedServiceAreas.map((area) => (
-                  <Button
-                    key={area}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (!formData.serviceAreas.includes(area)) {
-                        handleInputChange('serviceAreas', [...formData.serviceAreas, area]);
-                      }
-                    }}
-                    disabled={formData.serviceAreas.includes(area)}
-                    className="text-xs"
-                  >
-                    {formData.serviceAreas.includes(area) ? (
-                      <Check className="w-3 h-3 mr-1" />
-                    ) : (
-                      <Plus className="w-3 h-3 mr-1" />
-                    )}
-                    {area}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Location Summary */}
-      {(formData.city || formData.isOnlineOnly) && (
+      {/* Contact Summary */}
+      {(locationData.contactInfo?.email || locationData.contactInfo?.phone) && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-green-50 dark:bg-green-900/20 rounded-lg p-6 border border-green-200 dark:border-green-800"
+          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4"
         >
-          <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center">
-              <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="font-medium text-green-900 dark:text-green-100 mb-2">
-                Location Information Summary
-              </h4>
-              
-              {formData.isOnlineOnly ? (
-                <p className="text-sm text-green-700 dark:text-green-300">
-                  ✓ {isHealthcareCategory ? 'Telehealth/Remote Practice' : (isBusinessType ? 'Online/Remote Business' : 'Remote Work')} - No physical location needed
-                </p>
-              ) : (
-                <div className="space-y-1 text-sm text-green-700 dark:text-green-300">
-                  <p>
-                    ✓ <strong>Location:</strong> {formData.city}{formData.state && `, ${formData.state}`}{formData.country && `, ${formData.country}`}
-                  </p>
-                  {formData.address && (
-                    <p>✓ <strong>Address:</strong> {formData.address}</p>
-                  )}
-                  {config.showServiceAreas && formData.serviceAreas.length > 0 && (
-                    <p>
-                      ✓ <strong>Service Areas:</strong> {formData.serviceAreas.join(', ')}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+          <h4 className="font-medium text-green-900 dark:text-green-100 mb-2">
+            📞 Contact Information Summary:
+          </h4>
+          <div className="space-y-1 text-sm text-green-800 dark:text-green-200">
+            {locationData.contactInfo?.email && (
+              <p><strong>Email:</strong> {locationData.contactInfo.email}</p>
+            )}
+            {locationData.contactInfo?.phone && (
+              <p><strong>Phone:</strong> {locationData.contactInfo.phone}</p>
+            )}
+            {locationData.contactInfo?.website && (
+              <p><strong>Website:</strong> {locationData.contactInfo.website}</p>
+            )}
+            {locationData.contactInfo?.socialMedia && Object.values(locationData.contactInfo.socialMedia).some(url => url) && (
+              <p><strong>Social Media:</strong> {Object.values(locationData.contactInfo.socialMedia).filter(url => url).length} profiles added</p>
+            )}
           </div>
         </motion.div>
       )}
 
-      {/* Help Text */}
-      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-        <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">
-          {isHealthcareCategory ? '🏥 Practice Location Tips:' : '💡 Location Tips:'}
-        </h4>
-        <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
-          {isHealthcareCategory ? (
-            <>
-              <li>• Your location helps patients find your practice easily</li>
-              <li>• Service areas help patients know if you serve their location</li>
-              <li>• Consider listing specific neighborhoods or regions you serve</li>
-              <li>• Include nearby landmarks or major intersections if helpful</li>
-              <li>• Telehealth practices can still benefit from listing their base location</li>
-            </>
-          ) : (
-            <>
-              <li>• Your location helps with search engine optimization (SEO)</li>
-              <li>• Service areas help customers understand if you can help them</li>
-              <li>• You can always update this information later</li>
-              {isBusinessType && (
-                <li>• Consider listing specific neighborhoods or regions you serve</li>
-              )}
-            </>
-          )}
+      {/* Tips */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <h3 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
+          💡 Location & Contact Tips:
+        </h3>
+        <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
+          <li>• Complete address information helps with Google Maps integration</li>
+          <li>• Service areas improve local search rankings</li>
+          <li>• Professional email addresses build trust (avoid @gmail.com for business)</li>
+          <li>• Social media profiles increase online credibility</li>
+          <li>• Phone numbers should be easily readable and clickable on mobile</li>
+          <li>• Consider mentioning nearby landmarks or neighborhoods for better local SEO</li>
         </ul>
       </div>
     </div>
