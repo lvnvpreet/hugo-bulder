@@ -1,0 +1,62 @@
+# ==============================================
+# Nginx Service - .gitignore
+# ==============================================
+
+# ==============================================
+# Test Files and Results
+# ==============================================
+# Test files
+test-*.conf
+test-*.js
+test-*.ts
+test-*.py
+test_*.conf
+test_*.js
+test_*.ts
+test_*.py
+*.test.conf
+*.test.js
+*.test.ts
+*.test.py
+*.spec.conf
+*.spec.js
+*.spec.ts
+*.spec.py
+__tests__/
+tests/
+test/
+testing/
+
+# Test results and outputs
+test-results/
+test-output/
+test-*-output/
+test-*-results/
+
+# Test directories and temp files
+temp/
+tmp/
+temp-*/
+tmp-*/
+*-temp/
+*-tmp/
+
+# ==============================================
+# Nginx specific
+# ==============================================
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Access logs (if stored locally)
+access.log
+error.log
+*.log
+logs/
+
+# SSL certificates (if any)
+*.pem
+*.key
+*.crt
+*.cert

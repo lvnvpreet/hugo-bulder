@@ -179,49 +179,43 @@ export default function Step10Summary() {
     };
   };
 
-  // Generate unique project name to avoid 409 conflicts
-  const generateUniqueProjectName = (baseName: string, attempt: number = 0): string => {
-    if (attempt === 0) {
-      return baseName;
-    }
-    return `${baseName} (${attempt})`;
+  // Generate truly unique project name using business name + timestamp
+  const generateUniqueProjectName = (baseName: string): string => {
+    const timestamp = Date.now();
+    const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD format
+    
+    // Clean the base name (remove special characters, limit length)
+    const cleanBaseName = baseName
+      .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+      .trim()
+      .substring(0, 40); // Limit length to 40 chars
+    
+    return `${cleanBaseName}-${dateStr}-${timestamp}`;
   };
 
-  // Create project with conflict handling
-  const createProjectWithRetry = async (maxAttempts = 5): Promise<string> => {
+  // Simplified create project function (no retry needed!)
+  const createProject = async (): Promise<string> => {
     const baseName = data.businessInfo?.name || 'Generated Website';
+    const projectName = generateUniqueProjectName(baseName);
+    
+    console.log(`🏗️ Creating project: "${projectName}"`);
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const projectName = generateUniqueProjectName(baseName, attempt);
-        console.log(`🔍 Attempting to create project: "${projectName}" (attempt ${attempt + 1})`);
+    try {
+      const projectResponse = await projectsAPI.create({
+        name: projectName,
+        description: data.businessInfo?.description || '',
+        wizardData: data,
+        type: data.websiteType?.category || 'business'
+      });
 
-        const projectResponse = await projectsAPI.create({
-          name: projectName,
-          description: data.businessInfo?.description || '',
-          wizardData: data,
-          type: data.websiteType?.category || 'business'
-        });
+      const projectId = (projectResponse as any).id || (projectResponse as any).data?.id;
+      console.log('✅ Project created successfully with ID:', projectId, 'Name:', projectName);
+      return projectId;
 
-        const projectId = (projectResponse as any).id || (projectResponse as any).data?.id;
-        console.log('✅ Project created successfully with ID:', projectId);
-        return projectId;
-
-      } catch (createError: any) {
-        console.error(`❌ Attempt ${attempt + 1} failed:`, createError.message);
-
-        if (createError?.response?.status === 409) {
-          console.log('⚠️ Project name conflict, trying with different name...');
-          // Continue to next attempt with modified name
-          continue;
-        } else {
-          // Different error, don't retry
-          throw createError;
-        }
-      }
+    } catch (createError: any) {
+      console.error('❌ Failed to create project:', createError);
+      throw new Error(`Failed to create project: ${createError.message}`);
     }
-
-    throw new Error(`Failed to create project after ${maxAttempts} attempts. Please try with a different name.`);
   };
 
   // Find existing project by wizard data similarity
@@ -283,6 +277,40 @@ export default function Step10Summary() {
     return true;
   };
 
+  // Helper function to format address object into readable string
+  const formatAddress = (address: any) => {
+    if (!address) return 'Physical Location';
+    
+    const parts = [];
+    
+    // Add street if available
+    if (address.street && address.street.trim()) {
+      parts.push(address.street.trim());
+    }
+    
+    // Add city if available
+    if (address.city && address.city.trim()) {
+      parts.push(address.city.trim());
+    }
+    
+    // Add state if available
+    if (address.state && address.state.trim()) {
+      parts.push(address.state.trim());
+    }
+    
+    // Add zipCode if available
+    if (address.zipCode && address.zipCode.trim()) {
+      parts.push(address.zipCode.trim());
+    }
+    
+    // Add country if available and different from default
+    if (address.country && address.country.trim() && address.country.trim() !== 'India') {
+      parts.push(address.country.trim());
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : 'Physical Location';
+  };
+
   // Generate a summary of all wizard data
   const getWizardSummary = () => {
     const summary = [];
@@ -308,11 +336,12 @@ export default function Step10Summary() {
       });
     }
 
-    if (data.locationInfo) {      summary.push({
+    if (data.locationInfo) {      
+      summary.push({
         title: 'Business Location',
         content: data.locationInfo.isOnlineOnly === true ?
           'Online Business' :
-          data.locationInfo.address ? data.locationInfo.address : 'Physical Location'
+          formatAddress(data.locationInfo.address) // ✅ Fixed: Use helper function instead of raw object
       });
     }
 
@@ -409,16 +438,21 @@ export default function Step10Summary() {
         }
       }
 
-      // STEP 4: Create project if needed
+      // STEP 4: Create project if needed (SIMPLIFIED - No retry logic!)
       if (!currentProjectId) {
         try {
-          currentProjectId = await createProjectWithRetry();
+          console.log('🏗️ No existing project found, creating new project...');
+          currentProjectId = await createProject(); // ✅ Much simpler!
           setProjectId(currentProjectId);
 
           // Fetch the created project
           const projectResponse = await api.get(`/projects/${currentProjectId}`) as any;
           project = projectResponse.data?.data || projectResponse.data;
-          console.log('✅ Project fetched after creation:', project);
+          console.log('✅ Project fetched after creation:', {
+            id: project?.id,
+            name: project?.name,
+            type: project?.type
+          });
 
         } catch (createError: any) {
           console.error('❌ Failed to create project:', createError);
@@ -462,6 +496,11 @@ export default function Step10Summary() {
       // STEP 6: Start the generation process
       console.log('🎬 Starting generation for project:', currentProjectId);
       console.log('🎯 Proceeding with generation...');
+
+      // Final validation - ensure we have a valid project ID
+      if (!currentProjectId) {
+        throw new Error('Unable to obtain valid project ID for generation');
+      }
 
       // Use the Generation store to start and monitor the generation
       try {        // Start generation with the GenerationStore

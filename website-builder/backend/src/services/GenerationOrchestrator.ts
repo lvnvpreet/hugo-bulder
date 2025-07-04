@@ -1,5 +1,6 @@
 import { ServiceCommunication } from './ServiceCommunication';
 import { ProjectService } from './ProjectService';
+import { ThemeBridgeService } from './ThemeBridgeService';
 import Bull, { Queue } from 'bull';
 
 interface ExtendedProjectData {
@@ -13,11 +14,13 @@ interface ExtendedProjectData {
 export class GenerationOrchestrator {
   private serviceCommunication: ServiceCommunication;
   private projectService: ProjectService;
+  private themeBridgeService: ThemeBridgeService;
   private generationQueue!: Queue;
   
   constructor() {
     this.serviceCommunication = new ServiceCommunication();
     this.projectService = new ProjectService();
+    this.themeBridgeService = new ThemeBridgeService();
     this.setupGenerationQueue();
   }
   
@@ -87,12 +90,33 @@ export class GenerationOrchestrator {
       
       await this.updateGenerationStatus(generationId, 'content_generated', 60);
       
-      // Step 3: Request Hugo site generation
+      // Step 2.5: Enhanced theme detection and configuration
+      console.log('🎨 Performing enhanced theme detection...');
+      const enhancedThemeConfig = await this.themeBridgeService.getEnhancedThemeConfig(project.wizardData);
+      
+      console.log(this.themeBridgeService.getThemeDetectionSummary(project.wizardData, enhancedThemeConfig));
+      
+      // Step 3: Request Hugo site generation with enhanced theme config
       const hugoRequest = {
         projectId,
         projectData: project.wizardData,
         generatedContent: aiResult.content.content,
-        themeConfig: project.wizardData.themeConfig || { id: 'ananke', name: 'ananke' },
+        themeConfig: {
+          id: enhancedThemeConfig.selectedTheme.id,
+          name: enhancedThemeConfig.selectedTheme.name,
+          displayName: enhancedThemeConfig.selectedTheme.displayName,
+          isLocal: enhancedThemeConfig.selectedTheme.isLocal,
+          githubUrl: enhancedThemeConfig.selectedTheme.githubUrl,
+          features: enhancedThemeConfig.supportedFeatures,
+          parameterMapping: enhancedThemeConfig.parameterMapping,
+          pageLayouts: enhancedThemeConfig.pageLayouts,
+          selectionReason: enhancedThemeConfig.selectionReason,
+          compatibilityScore: enhancedThemeConfig.compatibilityScore
+        },
+        themeMetadata: {
+          validation: enhancedThemeConfig.validation,
+          detectionSummary: this.themeBridgeService.getThemeDetectionSummary(project.wizardData, enhancedThemeConfig)
+        },
         seoData: aiResult.content.seo,
         structure: aiResult.content.structure
       };

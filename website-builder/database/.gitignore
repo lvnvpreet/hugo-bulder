@@ -1,0 +1,83 @@
+# ==============================================
+# Database Service - .gitignore
+# ==============================================
+
+# ==============================================
+# Environment Variables
+# ==============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+.envrc
+
+# ==============================================
+# Database Files
+# ==============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+postgres-data/
+mysql-data/
+mongodb-data/
+data/
+
+# ==============================================
+# Test Files and Results
+# ==============================================
+# Test files
+test-*.sql
+test-*.js
+test-*.ts
+test-*.py
+test_*.sql
+test_*.js
+test_*.ts
+test_*.py
+*.test.sql
+*.test.js
+*.test.ts
+*.test.py
+*.spec.sql
+*.spec.js
+*.spec.ts
+*.spec.py
+__tests__/
+tests/
+test/
+testing/
+
+# Test results and outputs
+test-results/
+test-output/
+test-*-output/
+test-*-results/
+coverage/
+junit.xml
+*.test-report.xml
+*.test-report.json
+
+# Test directories and temp files
+temp/
+tmp/
+temp-*/
+tmp-*/
+*-temp/
+*-tmp/
+
+# ==============================================
+# Backup Files
+# ==============================================
+*.bak
+*.backup
+*.dump
+*.sql.bak
+
+# ==============================================
+# Logs
+# ==============================================
+*.log
+logs/

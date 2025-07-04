@@ -1,5 +1,5 @@
-// Enhanced ThemeDetectionService.ts
-// Update your backend/src/services/ThemeDetectionService.ts with this enhanced version
+// backend/src/services/ThemeDetectionService.ts
+// Complete updated implementation with subcategory-based theme selection
 
 import * as path from 'path';
 import * as fs from 'fs';
@@ -8,7 +8,6 @@ export interface ThemeRecommendation {
   themeId: string;
   confidence: number;
   reasons: string[];
-  fallback?: string;
   websiteTypeMatch?: boolean;
   businessCategoryMatch?: boolean;
 }
@@ -43,199 +42,343 @@ export interface ThemeConfig {
     creative: number;
     technology: number;
   };
-  githubUrl: string;
+  githubUrl?: string;  // Optional for local themes
+  isLocal?: boolean;   // Indicates if theme is local only
   installCommand: string;
 }
 
-// Website Type to Theme Priority Mapping
-const WEBSITE_TYPE_THEME_PRIORITY: { [websiteType: string]: string[] } = {
-  'business': ['ananke', 'bigspring', 'papermod', 'mainroad'],
-  'portfolio': ['terminal', 'ananke', 'papermod'],
-  'blog': ['papermod', 'mainroad', 'clarity', 'ananke'],
-  'ecommerce': ['hargo', 'bigspring', 'ananke'],
-  'restaurant': ['restaurant', 'ananke', 'bigspring'],
-  'personal': ['papermod', 'terminal', 'ananke'],
-  'startup': ['bigspring', 'ananke', 'clarity'],
-  'agency': ['bigspring', 'ananke', 'terminal'],
-  'nonprofit': ['ananke', 'bigspring', 'papermod'],
-  'creative': ['terminal', 'ananke', 'papermod']
-};
+// ⭐ THEME CONFIGURATION - Allow for default themes and custom themes
+const USE_CUSTOM_THEMES_ONLY = false; // Set to false to allow default Hugo themes
+const FORCE_THEME_SELECTION = false;  // Set to false to allow manual theme selection
 
-// Business Category to Theme Mapping
-const BUSINESS_CATEGORY_THEME_MAPPING: { [category: string]: string[] } = {
-  'technology': ['clarity', 'papermod', 'terminal', 'ananke'],
-  'professional': ['ananke', 'bigspring', 'papermod'],
-  'healthcare': ['ananke', 'papermod', 'mainroad'],
-  'medical': ['ananke', 'papermod', 'mainroad'],
-  'creative': ['terminal', 'ananke', 'papermod'],
-  'restaurant': ['restaurant', 'ananke', 'bigspring'],
-  'food': ['restaurant', 'ananke', 'bigspring'],
-  'retail': ['hargo', 'bigspring', 'ananke'],
-  'ecommerce': ['hargo', 'bigspring', 'ananke'],
-  'automotive': ['ananke', 'bigspring', 'papermod'],
-  'realestate': ['ananke', 'bigspring', 'papermod'],
-  'education': ['ananke', 'papermod', 'mainroad'],
-  'nonprofit': ['ananke', 'papermod', 'bigspring'],
-  'homeservices': ['ananke', 'bigspring', 'papermod'],
-  'beauty': ['ananke', 'bigspring', 'papermod'],
-  'finance': ['ananke', 'bigspring', 'papermod'],
-  'legal': ['ananke', 'papermod', 'bigspring'],
-  'consulting': ['ananke', 'bigspring', 'papermod']
-};
-
-// Verified themes with enhanced metadata
 const VERIFIED_THEMES: ThemeConfig[] = [
+  // 🎯 DEFAULT HUGO THEME - Simple, clean, works for all business types
   {
-    id: 'papermod',
-    name: 'PaperMod',
-    displayName: 'PaperMod - Modern Blog Theme',
-    categories: ['blog', 'content', 'minimal', 'technology'],
-    websiteTypes: ['blog', 'personal', 'business'],
-    features: ['blog-focus', 'seo-optimized', 'fast-loading', 'dark-mode'],
-    colorScheme: { primary: '#1e40af', secondary: '#3b82f6', accent: '#60a5fa' },
-    suitability: {
-      business: 70, portfolio: 80, blog: 95, ecommerce: 40,
-      restaurant: 50, medical: 60, creative: 70, technology: 90
-    },
-    githubUrl: 'https://github.com/adityatelange/hugo-PaperMod',
-    installCommand: 'git submodule add --depth=1 https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod'
-  },
-  {
-    id: 'ananke',
-    name: 'ananke',
-    displayName: 'Ananke - Versatile Business Theme',
-    categories: ['business', 'multipurpose', 'professional'],
+    id: 'default-hugo',
+    name: 'default-hugo',
+    displayName: 'Default Hugo Theme - Clean & Simple',
+    categories: ['business', 'portfolio', 'blog', 'general'],
     websiteTypes: ['business', 'portfolio', 'blog'],
-    features: ['responsive', 'customizable', 'multipurpose', 'professional'],
-    colorScheme: { primary: '#2563eb', secondary: '#3b82f6', accent: '#60a5fa' },
-    suitability: {
-      business: 85, portfolio: 75, blog: 70, ecommerce: 60,
-      restaurant: 70, medical: 75, creative: 65, technology: 75
+    features: ['responsive', 'fast', 'seo-friendly', 'minimal', 'customizable'],
+    colorScheme: { 
+      primary: '#2563eb',   // Professional blue
+      secondary: '#64748b', // Neutral gray
+      accent: '#059669'     // Success green
     },
-    githubUrl: 'https://github.com/theNewDynamic/gohugo-theme-ananke',
-    installCommand: 'git submodule add https://github.com/theNewDynamic/gohugo-theme-ananke.git themes/ananke'
+    suitability: {
+      business: 80,
+      portfolio: 85,
+      blog: 90,
+      ecommerce: 70,
+      restaurant: 75,
+      medical: 75,
+      creative: 80,
+      technology: 85
+    },
+    isLocal: false,
+    installCommand: 'Default Hugo theme - no installation required'
   },
+  
+  // 🎯 YOUR CUSTOM HEALTHCARE THEME - Now available from GitHub
   {
-    id: 'bigspring',
-    name: 'bigspring-light-hugo',
-    displayName: 'Bigspring - Business Theme',
-    categories: ['business', 'startup', 'agency'],
-    websiteTypes: ['business', 'startup'],
-    features: ['modern-design', 'business-focus', 'agency-ready'],
-    colorScheme: { primary: '#6366f1', secondary: '#8b5cf6', accent: '#a78bfa' },
-    suitability: {
-      business: 90, portfolio: 70, blog: 60, ecommerce: 75,
-      restaurant: 65, medical: 70, creative: 80, technology: 85
+    id: 'health-wellness-theme',
+    name: 'health-wellness-theme',
+    displayName: 'Health & Wellness - Medical Theme',
+    categories: ['healthcare', 'medical', 'dental', 'wellness'],
+    websiteTypes: ['business'],
+    features: ['appointment-booking', 'patient-portal', 'medical-focus', 'healthcare-optimized', 'trust-building'],
+    colorScheme: { 
+      primary: '#0369a1',   // Medical blue
+      secondary: '#0284c7', // Lighter blue
+      accent: '#059669'     // Trust green
     },
-    githubUrl: 'https://github.com/gethugothemes/bigspring-light-hugo',
-    installCommand: 'git submodule add https://github.com/gethugothemes/bigspring-light-hugo.git themes/bigspring-light-hugo'
-  },
-  {
-    id: 'restaurant',
-    name: 'restaurant-hugo',
-    displayName: 'Restaurant Hugo - Food & Restaurant Theme',
-    categories: ['restaurant', 'food', 'hospitality'],
-    websiteTypes: ['business', 'restaurant'],
-    features: ['menu-display', 'gallery', 'reservation-ready'],
-    colorScheme: { primary: '#dc2626', secondary: '#ef4444', accent: '#f87171' },
     suitability: {
-      business: 60, portfolio: 40, blog: 40, ecommerce: 70,
-      restaurant: 95, medical: 30, creative: 70, technology: 30
+      business: 95,
+      portfolio: 30,
+      blog: 40,
+      ecommerce: 20,
+      restaurant: 10,
+      medical: 98,          // ⭐ HIGHEST score for healthcare
+      creative: 30,
+      technology: 40
     },
-    githubUrl: 'https://github.com/themefisher/restaurant-hugo',
-    installCommand: 'git submodule add https://github.com/themefisher/restaurant-hugo.git themes/restaurant-hugo'
-  },
-  {
-    id: 'hargo',
-    name: 'hargo-hugo',
-    displayName: 'Hargo - E-commerce Theme',
-    categories: ['ecommerce', 'shop', 'retail'],
-    websiteTypes: ['ecommerce', 'business'],
-    features: ['ecommerce', 'snipcart-integration', 'product-showcase'],
-    colorScheme: { primary: '#059669', secondary: '#10b981', accent: '#34d399' },
-    suitability: {
-      business: 70, portfolio: 50, blog: 40, ecommerce: 95,
-      restaurant: 50, medical: 40, creative: 60, technology: 65
-    },
-    githubUrl: 'https://github.com/gethugothemes/hargo-hugo',
-    installCommand: 'git submodule add https://github.com/gethugothemes/hargo-hugo.git themes/hargo-hugo'
-  },
-  {
-    id: 'terminal',
-    name: 'terminal',
-    displayName: 'Terminal - Developer Theme',
-    categories: ['developer', 'tech', 'minimal'],
-    websiteTypes: ['portfolio', 'blog'],
-    features: ['retro-design', 'developer-focus', 'unique-style'],
-    colorScheme: { primary: '#00ff00', secondary: '#33ff33', accent: '#66ff66' },
-    suitability: {
-      business: 40, portfolio: 85, blog: 75, ecommerce: 30,
-      restaurant: 25, medical: 30, creative: 80, technology: 90
-    },
-    githubUrl: 'https://github.com/panr/hugo-theme-terminal',
-    installCommand: 'git submodule add https://github.com/panr/hugo-theme-terminal.git themes/terminal'
-  },
-  {
-    id: 'clarity',
-    name: 'hugo-clarity',
-    displayName: 'Clarity - Tech Blog Theme',
-    categories: ['technology', 'documentation', 'technical'],
-    websiteTypes: ['blog', 'business'],
-    features: ['search', 'code-highlighting', 'modern-design', 'technical'],
-    colorScheme: { primary: '#0066cc', secondary: '#4d94ff', accent: '#80b3ff' },
-    suitability: {
-      business: 70, portfolio: 70, blog: 85, ecommerce: 50,
-      restaurant: 40, medical: 60, creative: 60, technology: 95
-    },
-    githubUrl: 'https://github.com/chipzoller/hugo-clarity',
-    installCommand: 'git submodule add https://github.com/chipzoller/hugo-clarity.git themes/hugo-clarity'
-  },
-  {
-    id: 'mainroad',
-    name: 'Mainroad',
-    displayName: 'Mainroad - Magazine Style',
-    categories: ['blog', 'content', 'news'],
-    websiteTypes: ['blog', 'business'],
-    features: ['content-focus', 'sidebar', 'seo-friendly', 'multilingual'],
-    colorScheme: { primary: '#2c5aa0', secondary: '#4a90e2', accent: '#7bb3f0' },
-    suitability: {
-      business: 75, portfolio: 60, blog: 90, ecommerce: 45,
-      restaurant: 60, medical: 70, creative: 65, technology: 80
-    },
-    githubUrl: 'https://github.com/Vimux/Mainroad',
-    installCommand: 'git submodule add https://github.com/Vimux/Mainroad.git themes/Mainroad'
+    githubUrl: 'https://github.com/lvnvpreet/health-wellness-theme.git',
+    isLocal: false,  // Now remote since it's on GitHub
+    installCommand: 'Remote theme - cloning from GitHub repository'
   }
+  
+  // 🔮 TODO: Add more custom themes here
+  
+  // TODO: Restaurant & Food Services Theme
+  // {
+  //   id: 'custom-restaurant-theme',
+  //   name: 'custom-restaurant-theme',
+  //   displayName: 'Custom Restaurant - Food Service Theme',
+  //   categories: ['restaurant', 'food', 'hospitality', 'catering'],
+  //   websiteTypes: ['business'],
+  //   features: ['menu-display', 'online-reservations', 'food-gallery', 'delivery-integration', 'reviews'],
+  //   colorScheme: { primary: '#dc2626', secondary: '#ef4444', accent: '#f59e0b' },
+  //   suitability: { business: 90, portfolio: 30, blog: 40, ecommerce: 70, restaurant: 98, medical: 10, creative: 60, technology: 30 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-restaurant-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: E-commerce & Retail Theme
+  // {
+  //   id: 'custom-ecommerce-theme',
+  //   name: 'custom-ecommerce-theme',
+  //   displayName: 'Custom E-commerce - Online Store Theme',
+  //   categories: ['ecommerce', 'retail', 'shop', 'store'],
+  //   websiteTypes: ['business', 'ecommerce'],
+  //   features: ['product-catalog', 'shopping-cart', 'payment-integration', 'inventory-management', 'customer-accounts'],
+  //   colorScheme: { primary: '#059669', secondary: '#10b981', accent: '#f59e0b' },
+  //   suitability: { business: 85, portfolio: 30, blog: 30, ecommerce: 98, restaurant: 40, medical: 20, creative: 50, technology: 60 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-ecommerce-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Technology & Software Theme
+  // {
+  //   id: 'custom-tech-theme',
+  //   name: 'custom-tech-theme',
+  //   displayName: 'Custom Technology - Software & Tech Theme',
+  //   categories: ['technology', 'software', 'ai', 'saas', 'startup'],
+  //   websiteTypes: ['business', 'portfolio'],
+  //   features: ['product-showcase', 'documentation', 'api-integration', 'demo-area', 'developer-tools'],
+  //   colorScheme: { primary: '#1e40af', secondary: '#3b82f6', accent: '#8b5cf6' },
+  //   suitability: { business: 88, portfolio: 85, blog: 70, ecommerce: 60, restaurant: 30, medical: 40, creative: 75, technology: 98 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-tech-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Professional Services Theme
+  // {
+  //   id: 'custom-professional-theme',
+  //   name: 'custom-professional-theme',
+  //   displayName: 'Custom Professional - Business Services Theme',
+  //   categories: ['professional', 'legal', 'finance', 'consulting', 'accounting'],
+  //   websiteTypes: ['business'],
+  //   features: ['service-pages', 'contact-forms', 'testimonials', 'case-studies', 'team-profiles'],
+  //   colorScheme: { primary: '#1e40af', secondary: '#3b82f6', accent: '#6366f1' },
+  //   suitability: { business: 95, portfolio: 70, blog: 60, ecommerce: 40, restaurant: 30, medical: 50, creative: 60, technology: 70 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-professional-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Creative & Portfolio Theme
+  // {
+  //   id: 'custom-creative-theme',
+  //   name: 'custom-creative-theme',
+  //   displayName: 'Custom Creative - Portfolio & Design Theme',
+  //   categories: ['creative', 'design', 'art', 'photography', 'agency'],
+  //   websiteTypes: ['portfolio', 'business'],
+  //   features: ['portfolio-gallery', 'project-showcase', 'client-testimonials', 'creative-layouts', 'image-optimization'],
+  //   colorScheme: { primary: '#7c3aed', secondary: '#8b5cf6', accent: '#f59e0b' },
+  //   suitability: { business: 75, portfolio: 98, blog: 70, ecommerce: 50, restaurant: 60, medical: 30, creative: 98, technology: 60 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-creative-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Education & Training Theme
+  // {
+  //   id: 'custom-education-theme',
+  //   name: 'custom-education-theme',
+  //   displayName: 'Custom Education - Learning & Training Theme',
+  //   categories: ['education', 'training', 'courses', 'school', 'university'],
+  //   websiteTypes: ['business', 'blog'],
+  //   features: ['course-catalog', 'student-portal', 'learning-management', 'instructor-profiles', 'certification'],
+  //   colorScheme: { primary: '#0369a1', secondary: '#0284c7', accent: '#059669' },
+  //   suitability: { business: 85, portfolio: 60, blog: 80, ecommerce: 40, restaurant: 30, medical: 50, creative: 60, technology: 75 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-education-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Real Estate Theme
+  // {
+  //   id: 'custom-realestate-theme',
+  //   name: 'custom-realestate-theme',
+  //   displayName: 'Custom Real Estate - Property & Listings Theme',
+  //   categories: ['realestate', 'property', 'housing', 'rental'],
+  //   websiteTypes: ['business'],
+  //   features: ['property-listings', 'search-filters', 'virtual-tours', 'agent-profiles', 'mortgage-calculator'],
+  //   colorScheme: { primary: '#059669', secondary: '#10b981', accent: '#f59e0b' },
+  //   suitability: { business: 92, portfolio: 60, blog: 50, ecommerce: 70, restaurant: 30, medical: 30, creative: 50, technology: 60 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-realestate-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // },
+
+  // TODO: Fitness & Wellness Theme
+  // {
+  //   id: 'custom-fitness-theme',
+  //   name: 'custom-fitness-theme',
+  //   displayName: 'Custom Fitness - Health & Wellness Theme',
+  //   categories: ['fitness', 'gym', 'wellness', 'spa', 'nutrition'],
+  //   websiteTypes: ['business'],
+  //   features: ['class-schedules', 'trainer-profiles', 'membership-plans', 'booking-system', 'progress-tracking'],
+  //   colorScheme: { primary: '#059669', secondary: '#10b981', accent: '#f59e0b' },
+  //   suitability: { business: 90, portfolio: 60, blog: 70, ecommerce: 60, restaurant: 40, medical: 70, creative: 60, technology: 50 },
+  //   githubUrl: 'https://github.com/yourcompany/custom-fitness-theme',
+  //   installCommand: 'Custom theme - local installation'
+  // }
 ];
+
+// ⭐ CUSTOM BUSINESS CATEGORY MAPPING - Only for custom themes (when enabled)
+const CUSTOM_THEME_MAPPING: { [category: string]: string[] } = {
+  // ✅ IMPLEMENTED: Healthcare categories - use custom theme (optional)
+  'healthcare': FORCE_THEME_SELECTION ? ['health-wellness-theme'] : ['default-hugo', 'health-wellness-theme'],
+  'medical': FORCE_THEME_SELECTION ? ['health-wellness-theme'] : ['default-hugo', 'health-wellness-theme'],
+  'dental': FORCE_THEME_SELECTION ? ['health-wellness-theme'] : ['default-hugo', 'health-wellness-theme'],
+  'wellness': FORCE_THEME_SELECTION ? ['health-wellness-theme'] : ['default-hugo', 'health-wellness-theme'],
+  
+  // Default fallback for all other categories
+  'business': ['default-hugo'],
+  'technology': ['default-hugo'],
+  'professional': ['default-hugo'],
+  'other': ['default-hugo']
+  
+  // TODO: Restaurant & Food Services - implement custom-restaurant-theme
+  // 'restaurant': ['custom-restaurant-theme'],
+  // 'food': ['custom-restaurant-theme'],
+  // 'hospitality': ['custom-restaurant-theme'],
+  // 'catering': ['custom-restaurant-theme'],
+  
+  // TODO: E-commerce & Retail - implement custom-ecommerce-theme
+  // 'ecommerce': ['custom-ecommerce-theme'],
+  // 'retail': ['custom-ecommerce-theme'],
+  // 'shop': ['custom-ecommerce-theme'],
+  // 'store': ['custom-ecommerce-theme'],
+  
+  // TODO: Technology & Software - implement custom-tech-theme
+  // 'technology': ['custom-tech-theme'],
+  // 'software': ['custom-tech-theme'],
+  // 'ai': ['custom-tech-theme'],
+  // 'saas': ['custom-tech-theme'],
+  // 'startup': ['custom-tech-theme'],
+  
+  // TODO: Professional Services - implement custom-professional-theme
+  // 'professional': ['custom-professional-theme'],
+  // 'legal': ['custom-professional-theme'],
+  // 'finance': ['custom-professional-theme'],
+  // 'consulting': ['custom-professional-theme'],
+  // 'accounting': ['custom-professional-theme'],
+  
+  // TODO: Creative & Portfolio - implement custom-creative-theme
+  // 'creative': ['custom-creative-theme'],
+  // 'design': ['custom-creative-theme'],
+  // 'art': ['custom-creative-theme'],
+  // 'photography': ['custom-creative-theme'],
+  // 'agency': ['custom-creative-theme'],
+  
+  // TODO: Education & Training - implement custom-education-theme
+  // 'education': ['custom-education-theme'],
+  // 'training': ['custom-education-theme'],
+  // 'courses': ['custom-education-theme'],
+  // 'school': ['custom-education-theme'],
+  // 'university': ['custom-education-theme'],
+  
+  // TODO: Real Estate - implement custom-realestate-theme
+  // 'realestate': ['custom-realestate-theme'],
+  // 'property': ['custom-realestate-theme'],
+  // 'housing': ['custom-realestate-theme'],
+  // 'rental': ['custom-realestate-theme'],
+  
+  // TODO: Fitness & Wellness - implement custom-fitness-theme
+  // 'fitness': ['custom-fitness-theme'],
+  // 'gym': ['custom-fitness-theme'],
+  // 'spa': ['custom-fitness-theme'],
+  // 'nutrition': ['custom-fitness-theme'],
+  
+  // ⚠️ NOTE: Categories without custom themes will return "no-theme-available"
+};
 
 // Industry-specific color schemes
 const INDUSTRY_COLORS: { [key: string]: ColorScheme } = {
-  automotive: {
-    primary: '#1f2937', secondary: '#374151', accent: '#dc2626',
-    background: '#ffffff', text: '#111827'
-  },
-  restaurant: {
-    primary: '#dc2626', secondary: '#ef4444', accent: '#f59e0b',
-    background: '#fef3c7', text: '#1f2937'
+  // ✅ IMPLEMENTED: Healthcare colors
+  healthcare: {
+    primary: '#0369a1', secondary: '#0284c7', accent: '#059669',
+    background: '#f0f9ff', text: '#1e293b'
   },
   medical: {
     primary: '#0369a1', secondary: '#0284c7', accent: '#059669',
     background: '#f0f9ff', text: '#1e293b'
   },
+  
+  // TODO: Restaurant & Food Services colors
+  restaurant: {
+    primary: '#dc2626', secondary: '#ef4444', accent: '#f59e0b',
+    background: '#fef3c7', text: '#1f2937'
+  },
+  food: {
+    primary: '#dc2626', secondary: '#ef4444', accent: '#f59e0b',
+    background: '#fef3c7', text: '#1f2937'
+  },
+  
+  // TODO: Technology & Software colors
   technology: {
     primary: '#1e40af', secondary: '#3b82f6', accent: '#8b5cf6',
     background: '#f8fafc', text: '#0f172a'
   },
+  software: {
+    primary: '#1e40af', secondary: '#3b82f6', accent: '#8b5cf6',
+    background: '#f8fafc', text: '#0f172a'
+  },
+  
+  // TODO: Professional Services colors
+  professional: {
+    primary: '#1e40af', secondary: '#3b82f6', accent: '#6366f1',
+    background: '#f8fafc', text: '#0f172a'
+  },
+  legal: {
+    primary: '#1e40af', secondary: '#3b82f6', accent: '#6366f1',
+    background: '#f8fafc', text: '#0f172a'
+  },
+  finance: {
+    primary: '#1e40af', secondary: '#3b82f6', accent: '#6366f1',
+    background: '#f8fafc', text: '#0f172a'
+  },
+  
+  // TODO: Creative & Portfolio colors
   creative: {
     primary: '#7c3aed', secondary: '#8b5cf6', accent: '#f59e0b',
     background: '#faf5ff', text: '#1f2937'
+  },
+  design: {
+    primary: '#7c3aed', secondary: '#8b5cf6', accent: '#f59e0b',
+    background: '#faf5ff', text: '#1f2937'
+  },
+  
+  // TODO: E-commerce & Retail colors
+  ecommerce: {
+    primary: '#059669', secondary: '#10b981', accent: '#f59e0b',
+    background: '#f0fdf4', text: '#1f2937'
   },
   retail: {
     primary: '#059669', secondary: '#10b981', accent: '#f59e0b',
     background: '#f0fdf4', text: '#1f2937'
   },
-  professional: {
-    primary: '#1e40af', secondary: '#3b82f6', accent: '#6366f1',
-    background: '#f8fafc', text: '#0f172a'
+  
+  // TODO: Education colors
+  education: {
+    primary: '#0369a1', secondary: '#0284c7', accent: '#059669',
+    background: '#f0f9ff', text: '#1e293b'
+  },
+  
+  // TODO: Real Estate colors
+  realestate: {
+    primary: '#059669', secondary: '#10b981', accent: '#f59e0b',
+    background: '#f0fdf4', text: '#1f2937'
+  },
+  
+  // TODO: Fitness & Wellness colors
+  fitness: {
+    primary: '#059669', secondary: '#10b981', accent: '#f59e0b',
+    background: '#f0fdf4', text: '#1f2937'
+  },
+  
+  // Legacy categories (keeping for compatibility)
+  automotive: {
+    primary: '#1f2937', secondary: '#374151', accent: '#dc2626',
+    background: '#ffffff', text: '#111827'
   }
 };
 
@@ -256,61 +399,284 @@ export class ThemeDetectionService {
   }
 
   /**
-   * Enhanced theme detection based on website type and business category
+   * ⭐ MAIN THEME DETECTION METHOD - Custom themes only
    */
   public async detectTheme(wizardData: any): Promise<ThemeRecommendation> {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    console.log('🎯 Starting enhanced theme detection with data:', {
+    console.log('🎯 Starting custom theme detection with data:', {
       websiteType: wizardData.websiteType?.id || wizardData.websiteType?.category,
-      businessCategory: wizardData.businessCategory?.id || wizardData.businessCategory?.industry
+      businessCategory: wizardData.businessCategory?.id || wizardData.businessCategory?.name,
+      subcategory: wizardData.businessCategory?.selectedSubCategory?.id || wizardData.businessInfo?.selectedSubcategory?.id
     });
 
-    // Extract website type and business category
+    // Extract data
     const websiteType = this.extractWebsiteType(wizardData);
     const businessCategory = this.extractBusinessCategory(wizardData);
+    const subcategory = this.extractSubcategory(wizardData);
 
-    console.log('📊 Extracted data:', { websiteType, businessCategory });
+    console.log('📊 Extracted data:', { websiteType, businessCategory, subcategory });
 
-    // Phase 1: Direct website type matching (highest priority)
-    let primaryThemes = this.getThemesByWebsiteType(websiteType);
-    console.log('🎯 Primary themes for website type:', primaryThemes);
-
-    // Phase 2: Business category refinement
-    if (businessCategory) {
-      const businessThemes = this.getThemesByBusinessCategory(businessCategory);
-      console.log('🏢 Business category themes:', businessThemes);
-
-      // Find intersection or use business category themes if primary is empty
-      if (primaryThemes.length > 0) {
-        const intersection = primaryThemes.filter(theme => businessThemes.includes(theme));
-        if (intersection.length > 0) {
-          primaryThemes = intersection;
-          console.log('✅ Using intersection themes:', primaryThemes);
-        }
-      } else {
-        primaryThemes = businessThemes;
-        console.log('📝 Using business category themes as primary');
-      }
+    // ⭐ ONLY METHOD 1: Custom theme selection with subcategory support
+    const customTheme = this.selectCustomTheme(websiteType, businessCategory, subcategory);
+    if (customTheme) {
+      console.log(`✅ Theme selected: ${customTheme.themeId} (${customTheme.confidence}% confidence)`);
+      
+      return {
+        themeId: customTheme.themeId,
+        confidence: customTheme.confidence,
+        reasons: [
+          subcategory ? 
+            `Match for ${subcategory} in ${businessCategory} industry` :
+            `Good match for ${businessCategory || 'general'} businesses`,
+          `Suitable for ${websiteType} websites`,
+          customTheme.themeId === 'default-hugo' ? 
+            'Clean, professional default theme' : 
+            'Custom theme with specialized features'
+        ],
+        websiteTypeMatch: true,
+        businessCategoryMatch: true
+      };
     }
 
-    // Phase 3: Calculate theme scores
-    const themeScores = this.calculateThemeScores(wizardData, primaryThemes);
-    console.log('📈 Theme scores:', themeScores);
+    // ⭐ Final fallback to default theme (should not reach here with current logic)
+    console.log('🎛️ Using final fallback to default theme');
+    
+    return {
+      themeId: 'default-hugo',
+      confidence: 40,
+      reasons: [
+        'Default Hugo theme - clean and professional',
+        'Works well for all business types',
+        'Fast, responsive, and SEO-friendly'
+      ],
+      websiteTypeMatch: true,
+      businessCategoryMatch: false
+    };
+  }
 
-    // Phase 4: Select best theme
-    const recommendation = this.selectBestTheme(themeScores, websiteType, businessCategory);
+  /**
+   * ⭐ CUSTOM THEME SELECTION - Enhanced with subcategory support and configurable behavior
+   */
+  private selectCustomTheme(websiteType: string, businessCategory: string | null, subcategory: string | null): { themeId: string; confidence: number } | null {
+    
+    // If forcing themes is disabled, provide default theme with lower confidence to allow choice
+    if (!FORCE_THEME_SELECTION) {
+      console.log('🎛️ Force theme selection is disabled - providing default theme option');
+      return { themeId: 'default-hugo', confidence: 60 }; // Lower confidence allows user choice
+    }
+    
+    // ✅ IMPLEMENTED: HEALTHCARE CATEGORY - Check subcategory for confidence boost
+    if (websiteType === 'business' && businessCategory === 'healthcare') {
+      
+      // ⭐ HIGH CONFIDENCE (95%) for specific healthcare subcategories
+      if (subcategory === 'dentists') {
+        console.log('🦷 Dentist subcategory detected - selecting health-wellness-theme with 95% confidence');
+        return { themeId: 'health-wellness-theme', confidence: 95 };
+      }
+      
+      if (subcategory === 'doctors') {
+        console.log('👨‍⚕️ Doctor subcategory detected - selecting health-wellness-theme with 95% confidence');
+        return { themeId: 'health-wellness-theme', confidence: 95 };
+      }
+      
+      if (subcategory === 'clinics') {
+        console.log('🏥 Clinic subcategory detected - selecting health-wellness-theme with 95% confidence');
+        return { themeId: 'health-wellness-theme', confidence: 95 };
+      }
+      
+      if (subcategory === 'therapists') {
+        console.log('🧠 Therapist subcategory detected - selecting health-wellness-theme with 95% confidence');
+        return { themeId: 'health-wellness-theme', confidence: 95 };
+      }
+      
+      // 📊 MEDIUM CONFIDENCE (75%) for healthcare without specific subcategory
+      console.log('🏥 Healthcare category detected - selecting health-wellness-theme with 75% confidence');
+      return { themeId: 'health-wellness-theme', confidence: 75 };
+    }
+    
+    // TODO: RESTAURANT & FOOD SERVICES CATEGORY - implement custom-restaurant-theme
+    // if (websiteType === 'business' && ['restaurant', 'food', 'hospitality', 'catering'].includes(businessCategory)) {
+    //   
+    //   // HIGH CONFIDENCE (95%) for specific restaurant subcategories
+    //   if (subcategory === 'fine-dining') {
+    //     console.log('🍽️ Fine dining subcategory detected - selecting custom-restaurant-theme with 95% confidence');
+    //     return { themeId: 'custom-restaurant-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'fast-food') {
+    //     console.log('🍕 Fast food subcategory detected - selecting custom-restaurant-theme with 95% confidence');
+    //     return { themeId: 'custom-restaurant-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'cafe') {
+    //     console.log('☕ Cafe subcategory detected - selecting custom-restaurant-theme with 95% confidence');
+    //     return { themeId: 'custom-restaurant-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'bakery') {
+    //     console.log('🥖 Bakery subcategory detected - selecting custom-restaurant-theme with 95% confidence');
+    //     return { themeId: 'custom-restaurant-theme', confidence: 95 };
+    //   }
+    //   
+    //   // MEDIUM CONFIDENCE (75%) for restaurant without specific subcategory
+    //   console.log('🍴 Restaurant category detected - selecting custom-restaurant-theme with 75% confidence');
+    //   return { themeId: 'custom-restaurant-theme', confidence: 75 };
+    // }
+    
+    // TODO: TECHNOLOGY & SOFTWARE CATEGORY - implement custom-tech-theme
+    // if (websiteType === 'business' && ['technology', 'software', 'ai', 'saas', 'startup'].includes(businessCategory)) {
+    //   
+    //   // HIGH CONFIDENCE (95%) for specific tech subcategories
+    //   if (subcategory === 'software-development') {
+    //     console.log('💻 Software development subcategory detected - selecting custom-tech-theme with 95% confidence');
+    //     return { themeId: 'custom-tech-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'ai-ml') {
+    //     console.log('🤖 AI/ML subcategory detected - selecting custom-tech-theme with 95% confidence');
+    //     return { themeId: 'custom-tech-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'saas') {
+    //     console.log('☁️ SaaS subcategory detected - selecting custom-tech-theme with 95% confidence');
+    //     return { themeId: 'custom-tech-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'mobile-apps') {
+    //     console.log('📱 Mobile apps subcategory detected - selecting custom-tech-theme with 95% confidence');
+    //     return { themeId: 'custom-tech-theme', confidence: 95 };
+    //   }
+    //   
+    //   // MEDIUM CONFIDENCE (75%) for technology without specific subcategory
+    //   console.log('💻 Technology category detected - selecting custom-tech-theme with 75% confidence');
+    //   return { themeId: 'custom-tech-theme', confidence: 75 };
+    // }
+    
+    // TODO: PROFESSIONAL SERVICES CATEGORY - implement custom-professional-theme
+    // if (websiteType === 'business' && ['professional', 'legal', 'finance', 'consulting', 'accounting'].includes(businessCategory)) {
+    //   
+    //   // HIGH CONFIDENCE (95%) for specific professional subcategories
+    //   if (subcategory === 'law-firm') {
+    //     console.log('⚖️ Law firm subcategory detected - selecting custom-professional-theme with 95% confidence');
+    //     return { themeId: 'custom-professional-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'financial-advisor') {
+    //     console.log('💰 Financial advisor subcategory detected - selecting custom-professional-theme with 95% confidence');
+    //     return { themeId: 'custom-professional-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'management-consulting') {
+    //     console.log('📊 Management consulting subcategory detected - selecting custom-professional-theme with 95% confidence');
+    //     return { themeId: 'custom-professional-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'accounting') {
+    //     console.log('🧮 Accounting subcategory detected - selecting custom-professional-theme with 95% confidence');
+    //     return { themeId: 'custom-professional-theme', confidence: 95 };
+    //   }
+    //   
+    //   // MEDIUM CONFIDENCE (75%) for professional without specific subcategory
+    //   console.log('💼 Professional services category detected - selecting custom-professional-theme with 75% confidence');
+    //   return { themeId: 'custom-professional-theme', confidence: 75 };
+    // }
+    
+    // TODO: E-COMMERCE & RETAIL CATEGORY - implement custom-ecommerce-theme
+    // if (websiteType === 'business' && ['ecommerce', 'retail', 'shop', 'store'].includes(businessCategory)) {
+    //   
+    //   // HIGH CONFIDENCE (95%) for specific ecommerce subcategories
+    //   if (subcategory === 'fashion') {
+    //     console.log('👗 Fashion subcategory detected - selecting custom-ecommerce-theme with 95% confidence');
+    //     return { themeId: 'custom-ecommerce-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'electronics') {
+    //     console.log('🔌 Electronics subcategory detected - selecting custom-ecommerce-theme with 95% confidence');
+    //     return { themeId: 'custom-ecommerce-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'home-garden') {
+    //     console.log('🏡 Home & Garden subcategory detected - selecting custom-ecommerce-theme with 95% confidence');
+    //     return { themeId: 'custom-ecommerce-theme', confidence: 95 };
+    //   }
+    //   
+    //   // MEDIUM CONFIDENCE (75%) for ecommerce without specific subcategory
+    //   console.log('🛒 E-commerce category detected - selecting custom-ecommerce-theme with 75% confidence');
+    //   return { themeId: 'custom-ecommerce-theme', confidence: 75 };
+    // }
+    
+    // TODO: CREATIVE & PORTFOLIO CATEGORY - implement custom-creative-theme
+    // if ((websiteType === 'portfolio' || websiteType === 'business') && ['creative', 'design', 'art', 'photography', 'agency'].includes(businessCategory)) {
+    //   
+    //   // HIGH CONFIDENCE (95%) for specific creative subcategories
+    //   if (subcategory === 'graphic-design') {
+    //     console.log('🎨 Graphic design subcategory detected - selecting custom-creative-theme with 95% confidence');
+    //     return { themeId: 'custom-creative-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'photography') {
+    //     console.log('📸 Photography subcategory detected - selecting custom-creative-theme with 95% confidence');
+    //     return { themeId: 'custom-creative-theme', confidence: 95 };
+    //   }
+    //   
+    //   if (subcategory === 'web-design') {
+    //     console.log('💻 Web design subcategory detected - selecting custom-creative-theme with 95% confidence');
+    //     return { themeId: 'custom-creative-theme', confidence: 95 };
+    //   }
+    //   
+    //   // MEDIUM CONFIDENCE (75%) for creative without specific subcategory
+    //   console.log('🎨 Creative category detected - selecting custom-creative-theme with 75% confidence');
+    //   return { themeId: 'custom-creative-theme', confidence: 75 };
+    // }
+    
+    // TODO: Add more business categories here...
+    // - Education & Training
+    // - Real Estate
+    // - Fitness & Wellness
+    // - Automotive
+    // - Beauty & Personal Care
+    // - Travel & Tourism
+    // - Non-profit
+    // - Manufacturing
+    // - Agriculture
+    
+    console.log(`🎛️ No custom theme available for: ${websiteType} + ${businessCategory} - falling back to default theme`);
+    return { themeId: 'default-hugo', confidence: 50 }; // Default theme fallback
+  }
 
-    console.log('🏆 Final recommendation:', recommendation);
-    return recommendation;
+  /**
+   * ⭐ EXTRACT SUBCATEGORY from wizard data
+   */
+  private extractSubcategory(wizardData: any): string | null {
+    // Method 1: From businessCategory.selectedSubCategory
+    if (wizardData.businessCategory?.selectedSubCategory?.id) {
+      console.log('📋 Subcategory from businessCategory.selectedSubCategory:', wizardData.businessCategory.selectedSubCategory.id);
+      return wizardData.businessCategory.selectedSubCategory.id;
+    }
+    
+    // Method 2: From businessInfo.selectedSubcategory  
+    if (wizardData.businessInfo?.selectedSubcategory?.id) {
+      console.log('📋 Subcategory from businessInfo.selectedSubcategory:', wizardData.businessInfo.selectedSubcategory.id);
+      return wizardData.businessInfo.selectedSubcategory.id;
+    }
+    
+    // Method 3: From businessInfo.selectedSubCategory (alternative naming)
+    if (wizardData.businessInfo?.selectedSubCategory?.id) {
+      console.log('📋 Subcategory from businessInfo.selectedSubCategory:', wizardData.businessInfo.selectedSubCategory.id);
+      return wizardData.businessInfo.selectedSubCategory.id;
+    }
+    
+    console.log('📋 No subcategory found in wizard data');
+    return null;
   }
 
   private extractWebsiteType(wizardData: any): string {
     return wizardData.websiteType?.id ||
       wizardData.websiteType?.category?.toLowerCase() ||
-      'business'; // default fallback
+      'business';
   }
 
   private extractBusinessCategory(wizardData: any): string | null {
@@ -320,218 +686,6 @@ export class ThemeDetectionService {
       null;
   }
 
-  private getThemesByWebsiteType(websiteType: string): string[] {
-    const normalizedType = websiteType.toLowerCase();
-
-    // Direct mapping first
-    if (WEBSITE_TYPE_THEME_PRIORITY[normalizedType]) {
-      return WEBSITE_TYPE_THEME_PRIORITY[normalizedType];
-    }
-
-    // Fallback mapping for variations
-    const mappings: { [key: string]: string } = {
-      'business website': 'business',
-      'personal website': 'personal',
-      'blog website': 'blog',
-      'portfolio website': 'portfolio',
-      'e-commerce': 'ecommerce',
-      'online store': 'ecommerce',
-      'restaurant website': 'restaurant',
-      'company website': 'business'
-    };
-
-    const mappedType = mappings[normalizedType] || 'business';
-    return WEBSITE_TYPE_THEME_PRIORITY[mappedType] || WEBSITE_TYPE_THEME_PRIORITY['business'];
-  }
-
-  private getThemesByBusinessCategory(businessCategory: string): string[] {
-    const normalizedCategory = businessCategory.toLowerCase();
-
-    // Direct mapping
-    if (BUSINESS_CATEGORY_THEME_MAPPING[normalizedCategory]) {
-      return BUSINESS_CATEGORY_THEME_MAPPING[normalizedCategory];
-    }
-
-    // Fuzzy matching for category variations
-    const fuzzyMappings: { [key: string]: string } = {
-      'tech': 'technology',
-      'software': 'technology',
-      'it': 'technology',
-      'food': 'restaurant',
-      'hospitality': 'restaurant',
-      'cafe': 'restaurant',
-      'health': 'medical',
-      'wellness': 'medical',
-      'design': 'creative',
-      'art': 'creative',
-      'photography': 'creative',
-      'shop': 'retail',
-      'store': 'retail',
-      'business': 'professional',
-      'services': 'professional'
-    };
-
-    const mappedCategory = fuzzyMappings[normalizedCategory] || normalizedCategory;
-    return BUSINESS_CATEGORY_THEME_MAPPING[mappedCategory] || BUSINESS_CATEGORY_THEME_MAPPING['professional'];
-  }
-
-  private calculateThemeScores(wizardData: any, candidateThemes: string[]): { [themeId: string]: number } {
-    const scores: { [themeId: string]: number } = {};
-
-    candidateThemes.forEach(themeId => {
-      const theme = this.themes.find(t => t.id === themeId);
-      if (!theme) return;
-
-      let score = 0;
-
-      // Website type match (40 points)
-      const websiteType = this.extractWebsiteType(wizardData);
-      if (theme.websiteTypes.includes(websiteType)) {
-        score += 40;
-      }
-
-      // Business category suitability (35 points)
-      const businessCategory = this.extractBusinessCategory(wizardData);
-      if (businessCategory) {
-        const suitabilityKey = this.mapBusinessCategoryToSuitability(businessCategory);
-        if (suitabilityKey && theme.suitability[suitabilityKey]) {
-          score += (theme.suitability[suitabilityKey] / 100) * 35;
-        }
-      }
-
-      // Feature requirements (25 points)
-      score += this.calculateFeatureScore(wizardData, theme);
-
-      scores[themeId] = score;
-    });
-
-    return scores;
-  }
-
-  private calculateFeatureScore(wizardData: any, theme: ThemeConfig): number {
-    let score = 0;
-
-    // Blog requirement
-    if (wizardData.websiteStructure?.hasBlog &&
-      (theme.categories.includes('blog') || theme.features.includes('blog-focus'))) {
-      score += 8;
-    }
-
-    // E-commerce requirement
-    if (wizardData.websiteStructure?.hasEcommerce &&
-      (theme.categories.includes('ecommerce') || theme.features.includes('ecommerce'))) {
-      score += 10;
-    }
-
-    // Portfolio requirement
-    if (wizardData.websiteStructure?.hasPortfolio &&
-      theme.websiteTypes.includes('portfolio')) {
-      score += 7;
-    }
-
-    return score;
-  }
-
-  private selectBestTheme(themeScores: { [themeId: string]: number }, websiteType: string, businessCategory: string | null): ThemeRecommendation {
-    const sortedThemes = Object.entries(themeScores)
-      .sort(([, a], [, b]) => b - a)
-      .map(([themeId, score]) => ({ themeId, score }));
-
-    if (sortedThemes.length === 0) {
-      // Ultimate fallback
-      return {
-        themeId: 'ananke',
-        confidence: 60,
-        reasons: ['Default versatile theme selected'],
-        fallback: 'papermod'
-      };
-    }
-
-    const bestTheme = sortedThemes[0];
-    const secondBest = sortedThemes[1];
-
-    // Calculate confidence based on score
-    const maxPossibleScore = 100; // 40 + 35 + 25
-    const confidence = Math.min(95, Math.max(65, (bestTheme.score / maxPossibleScore) * 100));
-
-    // Generate reasons
-    const reasons = this.generateReasons(bestTheme.themeId, websiteType, businessCategory);
-
-    return {
-      themeId: bestTheme.themeId,
-      confidence: Math.round(confidence),
-      reasons,
-      fallback: secondBest?.themeId,
-      websiteTypeMatch: true,
-      businessCategoryMatch: !!businessCategory
-    };
-  }
-
-  private generateReasons(themeId: string, websiteType: string, businessCategory: string | null): string[] {
-    const theme = this.themes.find(t => t.id === themeId);
-    if (!theme) return ['Theme selected based on requirements'];
-
-    const reasons: string[] = [];
-
-    // Website type reason
-    if (theme.websiteTypes.includes(websiteType)) {
-      reasons.push(`Perfect match for ${websiteType} websites`);
-    }
-
-    // Business category reason
-    if (businessCategory) {
-      const suitabilityKey = this.mapBusinessCategoryToSuitability(businessCategory);
-      if (suitabilityKey && theme.suitability[suitabilityKey] >= 80) {
-        reasons.push(`Highly suitable for ${businessCategory} industry (${theme.suitability[suitabilityKey]}% match)`);
-      }
-    }
-
-    // Feature reasons
-    if (theme.categories.includes(websiteType)) {
-      reasons.push(`Specialized for ${websiteType} functionality`);
-    }
-
-    // Theme-specific reasons
-    if (theme.features.length > 0) {
-      reasons.push(`Includes ${theme.features.slice(0, 2).join(' and ')} features`);
-    }
-
-    return reasons.length > 0 ? reasons : [`${theme.displayName} is well-suited for your requirements`];
-  }
-
-  private mapBusinessCategoryToSuitability(businessCategory: string): keyof ThemeConfig['suitability'] | null {
-    const mapping: { [key: string]: keyof ThemeConfig['suitability'] } = {
-      'automotive': 'business',
-      'restaurant': 'restaurant',
-      'food': 'restaurant',
-      'hospitality': 'restaurant',
-      'medical': 'medical',
-      'healthcare': 'medical',
-      'technology': 'technology',
-      'tech': 'technology',
-      'software': 'technology',
-      'creative': 'creative',
-      'design': 'creative',
-      'art': 'creative',
-      'retail': 'ecommerce',
-      'ecommerce': 'ecommerce',
-      'shop': 'ecommerce',
-      'store': 'ecommerce',
-      'professional': 'business',
-      'consulting': 'business',
-      'finance': 'business',
-      'legal': 'business',
-      'blog': 'blog',
-      'news': 'blog',
-      'portfolio': 'portfolio'
-    };
-
-    return mapping[businessCategory] || 'business';
-  }
-
-  /**
-   * Detect color scheme based on business category and theme
-   */
   public detectColorScheme(wizardData: any, themeId: string): ColorScheme {
     const businessCategory = this.extractBusinessCategory(wizardData);
 
@@ -559,38 +713,73 @@ export class ThemeDetectionService {
     };
   }
 
-  /**
-   * Get explanation for theme selection
-   */
-  public getThemeExplanation(recommendation: ThemeRecommendation): string {
-    const theme = this.themes.find(t => t.id === recommendation.themeId);
-    if (!theme) {
-      return `We've selected ${recommendation.themeId} as the best theme for your website.`;
-    }
-
-    const confidence = recommendation.confidence;
-    let explanation = `We've selected ${theme.displayName} with ${confidence}% confidence. `;
-
-    if (confidence >= 90) {
-      explanation += `This theme is an excellent match for your requirements. `;
-    } else if (confidence >= 80) {
-      explanation += `This theme is a very good match for your requirements. `;
-    } else if (confidence >= 70) {
-      explanation += `This theme is a good match for your requirements. `;
-    } else {
-      explanation += `This theme should work well for your website. `;
-    }
-
-    explanation += `${theme.displayName} is optimized for ${theme.categories.join(', ')}-focused websites and includes ${theme.features.slice(0, 2).join(', ')} features.`;
-
-    return explanation;
-  }
-
   public getAvailableThemes(): ThemeConfig[] {
     return this.themes;
   }
 
   public getThemeById(themeId: string): ThemeConfig | undefined {
     return this.themes.find(theme => theme.id === themeId);
+  }
+
+  /**
+   * ⭐ ENHANCED THEME DETECTION - Uses new theme selection system
+   */
+  public async detectThemeEnhanced(wizardData: any): Promise<{
+    themeId: string;
+    themeName: string;
+    confidence: number;
+    isLocal: boolean;
+    features: string[];
+    parameterMapping: any;
+    selectionReason: string;
+  }> {
+    try {
+      // Import here to avoid circular dependencies
+      const { ThemeBridgeService } = await import('./ThemeBridgeService');
+      const themeBridge = new ThemeBridgeService();
+      
+      console.log('🎯 Enhanced theme detection starting...');
+      
+      // Get enhanced theme configuration
+      const enhancedConfig = await themeBridge.getEnhancedThemeConfig(wizardData);
+      
+      return {
+        themeId: enhancedConfig.selectedTheme.id,
+        themeName: enhancedConfig.selectedTheme.name,
+        confidence: enhancedConfig.compatibilityScore / 100, // Convert to 0-1 scale
+        isLocal: enhancedConfig.selectedTheme.isLocal,
+        features: enhancedConfig.supportedFeatures,
+        parameterMapping: enhancedConfig.parameterMapping,
+        selectionReason: enhancedConfig.selectionReason
+      };
+      
+    } catch (error) {
+      console.error('❌ Enhanced theme detection failed:', error);
+      
+      // Throw error instead of using fallback
+      throw new Error(`Enhanced theme detection failed: ${error}. Please ensure the theme system is properly configured.`);
+    }
+  }
+  
+  /**
+   * Calculate confidence score from enhanced theme selection
+   */
+  private calculateConfidence(selection: any): number {
+    // The enhanced system gives us alternative themes with scores
+    if (selection.alternativeThemes && selection.alternativeThemes.length > 0) {
+      // If we have alternatives, we can gauge confidence by the gap
+      const bestScore = selection.alternativeThemes[0]?.score || 0;
+      const gap = Math.max(0, 100 - bestScore);
+      return Math.min(0.95, (80 + gap) / 100); // 80-95% confidence range
+    }
+    
+    // Default confidence based on selection reason
+    if (selection.reason.includes('Best match')) {
+      return 0.90;
+    } else if (selection.reason.includes('Default')) {
+      return 0.50;
+    }
+    
+    return 0.75;
   }
 }

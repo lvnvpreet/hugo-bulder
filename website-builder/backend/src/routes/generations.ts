@@ -65,92 +65,59 @@ router.post(
     }
 
     try {
-      // Use the ThemeDetectionService (algorithmic, not AI)
+      // ⭐ USE ONLY METHOD 1: Custom Theme Selection
       const themeDetector = new ThemeDetectionService();
+      await themeDetector.initialize();
       
-      // Mock theme detection based on website type and business category
-      let recommendedTheme = 'ananke'; // default fallback
-      let confidence = 75;
-      let reasons = ['Default theme selection'];
+      console.log('🎯 Using custom theme detection (Method 1 only)');
+      const themeRecommendation = await themeDetector.detectTheme(wizardData);
       
-      // Simple algorithmic theme detection
-      if (wizardData.websiteType?.id === 'business') {
-        if (wizardData.businessCategory?.id === 'professional') {
-          recommendedTheme = 'bigspring';
-          confidence = 85;
-          reasons = [
-            'Perfect match for business websites',
-            'Highly suitable for professional industry',
-            'Specialized for business functionality',
-            'Includes modern design features'
-          ];
-        } else if (wizardData.businessCategory?.id === 'restaurant') {
-          recommendedTheme = 'restaurant';
-          confidence = 90;
-          reasons = [
-            'Designed specifically for restaurants',
-            'Perfect for food service businesses',
-            'Includes menu and booking features'
-          ];
-        } else {
-          recommendedTheme = 'papermod';
-          confidence = 80;
-          reasons = [
-            'Great for general business websites',
-            'Clean and professional design',
-            'SEO optimized'
-          ];
-        }
-      } else if (wizardData.websiteType?.id === 'portfolio') {
-        recommendedTheme = 'clarity';
-        confidence = 85;
-        reasons = [
-          'Perfect for showcasing work',
-          'Gallery and portfolio features',
-          'Modern and clean design'
-        ];
-      } else if (wizardData.websiteType?.id === 'blog') {
-        recommendedTheme = 'papermod';
-        confidence = 90;
-        reasons = [
-          'Optimized for blogging',
-          'Fast and lightweight',
-          'Great SEO features'
-        ];
+      // Check if a custom theme was found
+      if (themeRecommendation.themeId === 'no-theme-available') {
+        console.log('❌ No custom theme available for this business category');
+        
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'No custom theme available for this business category',
+            code: 'NO_CUSTOM_THEME_AVAILABLE',
+            details: themeRecommendation.reasons.join('. ')
+          },
+          data: {
+            businessCategory: wizardData.businessCategory?.id,
+            websiteType: wizardData.websiteType?.id,
+            availableCustomThemes: themeDetector.getAvailableThemes().map(t => t.id),
+            suggestion: 'Consider adding a custom theme for this business category'
+          }
+        });
       }
+      
+      // Generate color scheme using the detected theme
+      const colorScheme = themeDetector.detectColorScheme(wizardData, themeRecommendation.themeId);
+      
+      const explanation = `Custom theme "${themeRecommendation.themeId}" selected with ${themeRecommendation.confidence}% confidence based on your specific business requirements.`;
 
-      // Generate color scheme based on theme
-      const colorScheme = {
-        name: 'Modern Blue',
-        primary: '#2563eb',
-        secondary: '#1e40af',
-        accent: '#3b82f6',
-        background: '#ffffff',
-        text: '#1f2937'
-      };
-
-      const explanation = `We've selected ${recommendedTheme.charAt(0).toUpperCase() + recommendedTheme.slice(1)} theme with ${confidence}% confidence based on your website type and business category.`;
-
-      console.log('✅ Theme detection completed:', {
-        recommendedTheme,
-        confidence,
-        reasons: reasons.length
+      console.log('✅ Custom theme detection completed:', {
+        themeId: themeRecommendation.themeId,
+        confidence: themeRecommendation.confidence,
+        reasons: themeRecommendation.reasons.length
       });
 
       return res.json({
         success: true,
         data: {
-          recommendedTheme,
-          confidence,
-          reasons,
+          recommendedTheme: themeRecommendation.themeId,
+          confidence: themeRecommendation.confidence,
+          reasons: themeRecommendation.reasons,
           explanation,
           colorScheme,
-          fallback: 'ananke'
+          websiteTypeMatch: themeRecommendation.websiteTypeMatch,
+          businessCategoryMatch: themeRecommendation.businessCategoryMatch
         },
         meta: {
           timestamp: new Date().toISOString(),
           requestId: req.headers['x-request-id'] || 'unknown',
-          method: 'algorithmic_detection',
+          method: 'custom_theme_selection_only',
           source: 'wizard_data'
         }
       });
@@ -871,163 +838,6 @@ router.delete(
         error: {
           code: 'GENERATION_CANCEL_ERROR',
           message: 'Failed to cancel generation'
-        }
-      });
-    }
-  })
-);
-
-// POST /generations/detect-theme-wizard - Detect theme from wizard data (no project needed)
-/**
- * @swagger
- * /api/generations/detect-theme-wizard:
- *   post:
- *     summary: Detect theme based on wizard data without saving project
- *     description: Analyzes wizard data to recommend theme without requiring saved project
- *     tags: [Website Generation]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - wizardData
- *             properties:
- *               wizardData:
- *                 type: object
- *                 description: Complete wizard data for theme analysis
- *     responses:
- *       200:
- *         description: Theme recommendation generated successfully
- *       400:
- *         description: Invalid wizard data
- */
-router.post(
-  '/detect-theme-wizard',
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { wizardData } = req.body;
-
-    console.log('🎨 Starting theme detection with wizard data');
-    console.log('📋 Website type:', wizardData?.websiteType?.id);
-    console.log('📋 Business category:', wizardData?.businessCategory?.id);
-
-    if (!wizardData) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Wizard data is required', code: 'MISSING_WIZARD_DATA' }
-      });
-    }
-
-    if (!wizardData.websiteType) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Website type is required', code: 'MISSING_WEBSITE_TYPE' }
-      });
-    }
-
-    try {
-      // Use the ThemeDetectionService (algorithmic, not AI)
-      const themeDetector = new ThemeDetectionService();
-      
-      // Mock theme detection based on website type and business category
-      let recommendedTheme = 'ananke'; // default fallback
-      let confidence = 75;
-      let reasons = ['Default theme selection'];
-      
-      // Simple algorithmic theme detection
-      if (wizardData.websiteType?.id === 'business') {
-        if (wizardData.businessCategory?.id === 'professional') {
-          recommendedTheme = 'bigspring';
-          confidence = 85;
-          reasons = [
-            'Perfect match for business websites',
-            'Highly suitable for professional industry',
-            'Specialized for business functionality',
-            'Includes modern design features'
-          ];
-        } else if (wizardData.businessCategory?.id === 'restaurant') {
-          recommendedTheme = 'restaurant';
-          confidence = 90;
-          reasons = [
-            'Designed specifically for restaurants',
-            'Perfect for food service businesses',
-            'Includes menu and booking features'
-          ];
-        } else {
-          recommendedTheme = 'papermod';
-          confidence = 80;
-          reasons = [
-            'Great for general business websites',
-            'Clean and professional design',
-            'SEO optimized'
-          ];
-        }
-      } else if (wizardData.websiteType?.id === 'portfolio') {
-        recommendedTheme = 'clarity';
-        confidence = 85;
-        reasons = [
-          'Perfect for showcasing work',
-          'Gallery and portfolio features',
-          'Modern and clean design'
-        ];
-      } else if (wizardData.websiteType?.id === 'blog') {
-        recommendedTheme = 'papermod';
-        confidence = 90;
-        reasons = [
-          'Optimized for blogging',
-          'Fast and lightweight',
-          'Great SEO features'
-        ];
-      }
-
-      // Generate color scheme based on theme
-      const colorScheme = {
-        name: 'Modern Blue',
-        primary: '#2563eb',
-        secondary: '#1e40af',
-        accent: '#3b82f6',
-        background: '#ffffff',
-        text: '#1f2937'
-      };
-
-      const explanation = `We've selected ${recommendedTheme.charAt(0).toUpperCase() + recommendedTheme.slice(1)} theme with ${confidence}% confidence based on your website type and business category.`;
-
-      console.log('✅ Theme detection completed:', {
-        recommendedTheme,
-        confidence,
-        reasons: reasons.length
-      });
-
-      return res.json({
-        success: true,
-        data: {
-          recommendedTheme,
-          confidence,
-          reasons,
-          explanation,
-          colorScheme,
-          fallback: 'ananke'
-        },
-        meta: {
-          timestamp: new Date().toISOString(),
-          requestId: req.headers['x-request-id'] || 'unknown',
-          method: 'algorithmic_detection',
-          source: 'wizard_data'
-        }
-      });
-
-    } catch (error: any) {
-      console.error('❌ Theme detection failed:', error);
-      
-      return res.status(500).json({
-        success: false,
-        error: { 
-          message: 'Theme detection failed', 
-          code: 'THEME_DETECTION_ERROR',
-          details: error.message 
         }
       });
     }

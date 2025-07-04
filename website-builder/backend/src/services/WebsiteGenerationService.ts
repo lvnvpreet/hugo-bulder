@@ -104,8 +104,8 @@ export class WebsiteGenerationService {
 
     this.outputDir = path.join(process.cwd(), 'generated-sites');
     this.themeDetection = new ThemeDetectionService();
-    // Updated to use port 8000 for Ollama AI engine
-    this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8000';
+    // Updated to use port 3002 for local AI engine (without Docker)
+    this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:3002';
     
     // Ensure output directory exists
     fs.ensureDirSync(this.outputDir);
@@ -231,21 +231,27 @@ export class WebsiteGenerationService {
       console.log(`🎨 [DEBUG] Requested theme:`, hugoTheme);
       console.log(`🎨 [DEBUG] Auto detect theme:`, options.autoDetectTheme);
       
-      let finalTheme = hugoTheme || 'ananke';
+      let finalTheme = hugoTheme;
       
       if (options.autoDetectTheme || !hugoTheme) {
         try {
-          console.log('🎯 [DEBUG] Auto-detecting theme based on project data...');
+          console.log('🎯 [DEBUG] Auto-detecting theme using ONLY custom theme selection (Method 1)...');
           console.log('🎯 [DEBUG] Project wizardData type:', typeof project.wizardData);
           
           const detectedTheme = await this.themeDetection.detectTheme(project.wizardData);
           
           console.log('🎯 [DEBUG] Theme detection result:', detectedTheme);
-            if (detectedTheme) {
-            finalTheme = typeof detectedTheme === 'string' ? detectedTheme : detectedTheme.themeId || 'ananke';
-            console.log(`✅ [DEBUG] Theme auto-detected: ${finalTheme}`);
+          
+          // Check if custom theme was found
+          if (detectedTheme && detectedTheme.themeId !== 'no-theme-available') {
+            finalTheme = detectedTheme.themeId;
+            console.log(`✅ [DEBUG] Custom theme auto-detected: ${finalTheme}`);
           } else {
-            console.log(`⚠️ [DEBUG] No theme detected, using fallback: ${finalTheme}`);
+            // No custom theme available - this should fail the generation
+            console.error(`❌ [DEBUG] No custom theme available for this business category`);
+            const wizardData = project.wizardData as any;
+            const businessCategory = wizardData?.businessCategory?.id || 'unknown';
+            throw new Error(`No custom theme available for business category: ${businessCategory}. Custom themes are required.`);
           }
         } catch (themeError) {
           console.error('❌ [DEBUG] Theme detection failed:', {
@@ -253,8 +259,19 @@ export class WebsiteGenerationService {
             message: themeError instanceof Error ? themeError.message : String(themeError),
             stack: themeError instanceof Error ? themeError.stack : undefined
           });
-          console.warn(`⚠️ [DEBUG] Using fallback theme: ${finalTheme}`);
+          
+          // If no hugoTheme was provided and custom detection failed, fail the generation
+          if (!hugoTheme) {
+            throw new Error(`Theme selection failed: ${themeError instanceof Error ? themeError.message : String(themeError)}`);
+          }
+          
+          console.warn(`⚠️ [DEBUG] Using manually specified theme: ${finalTheme}`);
         }
+      }
+      
+      // Ensure we have a theme at this point
+      if (!finalTheme) {
+        throw new Error('No theme specified and no custom theme available for this business category');
       }
       
       console.log(`🎨 [DEBUG] Final theme selected: ${finalTheme}`);      // Create generation record
@@ -664,208 +681,9 @@ export class WebsiteGenerationService {
         }
       }
       
-      // Fallback content generation
-      console.log('📝 Using fallback content generation...');
-      return this.generateFallbackContent(projectData);
+      // Throw error instead of using fallback
+      throw new Error(`AI Engine connection failed. Please ensure the AI Engine is running on ${this.aiEngineUrl}`);
     }
-  }
-
-  /**
-   * Generate fallback content if AI service is unavailable
-   */
-  private generateFallbackContent(projectData: any): OllamaContentResponse {
-    console.log('📝 Generating high-quality fallback content...');
-    
-    return {
-      pages: {
-        home: {
-          title: `Welcome to ${projectData.businessName}`,
-          content: `# Welcome to ${projectData.businessName}
-
-${projectData.description || 'Your trusted partner for professional services.'}
-
-## What We Do
-
-At ${projectData.businessName}, we specialize in delivering exceptional ${projectData.businessType} services that help our clients achieve their goals. Our team of experienced professionals is dedicated to providing innovative solutions tailored to your specific needs.
-
-### Our Key Services
-
-- **Professional Consulting**: Expert guidance for your business challenges
-- **Custom Solutions**: Tailored approaches that fit your unique requirements  
-- **Ongoing Support**: Comprehensive support throughout your journey
-- **Results-Driven**: Focused on delivering measurable outcomes
-
-## Why Choose ${projectData.businessName}?
-
-- ✅ **Proven Expertise**: Years of experience in ${projectData.industry || 'the industry'}
-- ✅ **Client-Focused**: Your success is our priority
-- ✅ **Quality Assurance**: Commitment to excellence in everything we do
-- ✅ **Competitive Pricing**: Value-driven solutions that fit your budget
-
-## Ready to Get Started?
-
-Contact us today to discuss how ${projectData.businessName} can help transform your business.
-
-[Get in Touch](#contact) | [Learn More About Us](#about)`,
-          meta_description: `${projectData.businessName} - Professional ${projectData.businessType} services. Expert solutions tailored to your needs. Contact us today!`,
-          keywords: [projectData.businessName.toLowerCase(), projectData.businessType.toLowerCase(), 'professional services', 'expert solutions'],
-          word_count: 200
-        },
-        about: {
-          title: `About ${projectData.businessName}`,
-          content: `# About ${projectData.businessName}
-
-## Our Story
-
-${projectData.businessName} was founded with a simple mission: to provide exceptional ${projectData.businessType} services that truly make a difference. We understand that every business is unique, which is why we take the time to understand your specific needs and challenges.
-
-## Our Mission
-
-To empower businesses with innovative solutions and expert guidance that drive sustainable growth and success.
-
-## Our Values
-
-### Excellence
-We are committed to delivering the highest quality in everything we do. Our attention to detail and dedication to excellence sets us apart.
-
-### Innovation  
-We stay ahead of industry trends and continuously evolve our approaches to provide cutting-edge solutions.
-
-### Integrity
-Honest, transparent communication builds trust. We believe in doing the right thing, even when no one is watching.
-
-### Partnership
-We don't just work for you – we work with you. Your success is our success, and we're invested in your long-term growth.
-
-## Our Team
-
-Our team consists of highly skilled professionals with extensive experience in ${projectData.industry || 'various industries'}. We combine technical expertise with creative problem-solving to deliver results that exceed expectations.
-
-## Our Commitment
-
-When you choose ${projectData.businessName}, you're choosing a partner committed to your success. We take pride in building long-lasting relationships based on trust, reliability, and exceptional results.`,
-          meta_description: `Learn about ${projectData.businessName}'s mission, values, and commitment to delivering exceptional ${projectData.businessType} services.`,
-          keywords: ['about us', projectData.businessName.toLowerCase(), 'company mission', 'our team', 'values'],
-          word_count: 250
-        },
-        services: {
-          title: 'Our Services',
-          content: `# Our Services
-
-At ${projectData.businessName}, we offer a comprehensive range of ${projectData.businessType} services designed to meet your unique needs and drive your business forward.
-
-## Core Services
-
-### Strategic Consulting
-Our expert consultants work with you to develop comprehensive strategies that align with your business objectives and market opportunities.
-
-**What's Included:**
-- Business analysis and assessment
-- Strategic planning and roadmap development
-- Market research and competitive analysis
-- Implementation guidance and support
-
-### Custom Solutions Development
-We create tailored solutions specifically designed for your business requirements and industry challenges.
-
-**Key Features:**
-- Customized approach for each client
-- Scalable solutions that grow with your business
-- Integration with existing systems
-- Ongoing optimization and refinement
-
-### Professional Support Services
-Comprehensive support to ensure your continued success and optimal performance.
-
-**Support Includes:**
-- Technical assistance and troubleshooting
-- Regular performance monitoring
-- Updates and maintenance
-- Training and knowledge transfer
-
-### Performance Optimization
-We help you maximize efficiency and effectiveness across all aspects of your operations.
-
-**Optimization Areas:**
-- Process improvement and automation
-- Resource allocation and management
-- Quality assurance and control
-- Performance metrics and reporting
-
-## Industry Expertise
-
-We have extensive experience serving clients in ${projectData.industry || 'various industries'}, giving us deep insights into sector-specific challenges and opportunities.
-
-## Getting Started
-
-Ready to explore how our services can benefit your business? Contact us for a consultation to discuss your specific needs and learn how we can help you achieve your goals.
-
-[Schedule a Consultation](#contact) | [View Case Studies](#portfolio)`,
-          meta_description: `Comprehensive ${projectData.businessType} services from ${projectData.businessName}. Strategic consulting, custom solutions, and professional support.`,
-          keywords: ['services', projectData.businessType.toLowerCase(), 'consulting', 'solutions', 'support'],
-          word_count: 300
-        },
-        contact: {
-          title: 'Contact Us',
-          content: `# Contact ${projectData.businessName}
-
-Ready to take the next step? We'd love to hear from you and discuss how we can help your business succeed.
-
-## Get In Touch
-
-Whether you have a specific project in mind or just want to learn more about our services, we're here to help. Our team is ready to provide the expert guidance and support you need.
-
-### Contact Information
-
-- **Email:** ${projectData.contact?.email || 'info@example.com'}
-- **Phone:** ${projectData.contact?.phone || '(555) 123-4567'}
-- **Address:** ${projectData.location || 'Your Business Address'}
-
-### Business Hours
-
-- **Monday - Friday:** 9:00 AM - 6:00 PM
-- **Saturday:** 10:00 AM - 2:00 PM  
-- **Sunday:** Closed
-
-*For urgent matters outside business hours, please send an email and we'll respond as soon as possible.*
-
-## What Happens Next?
-
-When you contact us, here's what you can expect:
-
-1. **Initial Consultation** - We'll schedule a call to understand your needs and objectives
-2. **Proposal Development** - We'll create a customized proposal outlored to your requirements  
-3. **Project Planning** - Together, we'll develop a detailed project timeline and approach
-4. **Implementation** - Our team will work closely with you to deliver exceptional results
-
-## Service Areas
-
-We proudly serve clients ${projectData.location ? `in ${projectData.location} and surrounding areas` : 'nationwide'}, with both on-site and remote service options available.
-
-## Quick Response Guarantee
-
-We understand that business moves fast. That's why we guarantee a response to all inquiries within 24 hours during business days.
-
-**Ready to get started?** Use the contact information above or fill out our online contact form to begin your journey with ${projectData.businessName}.
-
-*We look forward to partnering with you for success!*`,
-          meta_description: `Contact ${projectData.businessName} for professional ${projectData.businessType} services. Quick response guaranteed. Get your free consultation today.`,
-          keywords: ['contact', projectData.businessName.toLowerCase(), 'consultation', 'get in touch', 'business hours'],
-          word_count: 280
-        }
-      },
-      seo_data: {
-        site_title: projectData.businessName,
-        site_description: `${projectData.businessName} - Professional ${projectData.businessType} services. Expert solutions tailored to your business needs.`,
-        main_keywords: [projectData.businessName.toLowerCase(), projectData.businessType.toLowerCase(), 'professional services'],
-        robots: 'index, follow',
-        og_type: 'website'
-      },
-      generation_time: 0.1,
-      model_used: 'fallback-content-generator',
-      word_count_total: 1030,
-      generation_id: 'fallback-' + Date.now()
-    };
   }
 
   /**
@@ -890,35 +708,101 @@ We understand that business moves fast. That's why we guarantee a response to al
     const themesDir = path.join(siteDir, 'themes');
     const themeDir = path.join(themesDir, themeName);
     
+    console.log(`🎨 Installing theme: ${themeName}`);
+    console.log(`📁 Site directory: ${siteDir}`);
+    console.log(`📁 Theme directory: ${themeDir}`);
+    
     try {
       await fs.ensureDir(themesDir);
+      console.log('✅ Created themes directory');
       
-      // Theme repository URLs
+      // Handle default Hugo theme
+      if (themeName === 'default-hugo') {
+        console.log('📦 Using default Hugo theme - no installation required');
+        return;
+      }
+      
+      // Check if theme already exists and remove it
+      if (await fs.pathExists(themeDir)) {
+        console.log('⚠️  Theme directory already exists, cleaning up...');
+        await fs.remove(themeDir);
+      }
+      
+      // Remote themes - clone from GitHub (including your custom health-wellness-theme)
       const themeRepos: Record<string, string> = {
         'ananke': 'https://github.com/theNewDynamic/gohugo-theme-ananke.git',
         'papermod': 'https://github.com/adityatelange/hugo-PaperMod.git',
-        'bigspring': 'https://github.com/themefisher/bigspring-hugo.git',
+        'bigspring': 'https://github.com/themefisher/bigspring-hugo.git',  
         'restaurant': 'https://github.com/themefisher/restaurant-hugo.git',
         'hargo': 'https://github.com/themefisher/hargo.git',
         'terminal': 'https://github.com/panr/hugo-theme-terminal.git',
         'clarity': 'https://github.com/chipzoller/hugo-clarity.git',
-        'mainroad': 'https://github.com/vimux/mainroad.git'
+        'mainroad': 'https://github.com/vimux/mainroad.git',
+        'health-wellness-theme': 'https://github.com/lvnvpreet/health-wellness-theme.git' // Your custom health theme
       };
 
-      const repoUrl = themeRepos[themeName] || themeRepos['ananke'];
+      const repoUrl = themeRepos[themeName];
+      if (!repoUrl) {
+        throw new Error(`Unknown theme: ${themeName}. Available themes: ${Object.keys(themeRepos).join(', ')}`);
+      }
       
-      // Clone theme with shallow clone for faster download
-      await execAsync(`git clone --depth 1 "${repoUrl}" "${themeDir}"`);
+      console.log(`🌐 Cloning theme from: ${repoUrl}`);
       
-      // Remove .git directory to avoid issues
+      // Clone with improved error handling and timeout
+      const cloneCommand = `git clone --depth 1 "${repoUrl}" "${themeDir}"`;
+      console.log(`🔧 Executing: ${cloneCommand}`);
+      
+      await execAsync(cloneCommand, {
+        timeout: 60000, // 60 second timeout
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0' // Disable interactive prompts
+        }
+      });
+      
+      console.log('✅ Theme cloned successfully');
+      
+      // Verify theme was installed correctly
+      const themeExists = await fs.pathExists(themeDir);
+      const layoutsExist = await fs.pathExists(path.join(themeDir, 'layouts'));
+      
+      if (!themeExists) {
+        throw new Error('Theme directory was not created');
+      }
+      
+      if (!layoutsExist) {
+        console.log('⚠️  Warning: Theme does not have layouts directory');
+      }
+      
+      // Remove .git directory for cleaner deployment
       const gitDir = path.join(themeDir, '.git');
       if (await fs.pathExists(gitDir)) {
         await fs.remove(gitDir);
+        console.log('🧹 Removed .git directory');
       }
       
+      // List theme contents for verification
+      const themeContents = await fs.readdir(themeDir);
+      console.log('📁 Theme contents:', themeContents);
+      
       console.log(`🎨 Theme ${themeName} installed successfully`);
+      
     } catch (error) {
-      throw new Error(`Failed to install theme ${themeName}: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Failed to install theme ${themeName}:`, errorMessage);
+      
+      // Clean up on failure
+      try {
+        if (await fs.pathExists(themeDir)) {
+          await fs.remove(themeDir);
+          console.log('🧹 Cleaned up failed installation');
+        }
+      } catch (cleanupError) {
+        const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        console.error('⚠️  Cleanup error:', cleanupMessage);
+      }
+      
+      throw new Error(`Failed to install theme ${themeName}: ${errorMessage}`);
     }
   }
 
@@ -935,7 +819,8 @@ We understand that business moves fast. That's why we guarantee a response to al
       baseURL: 'https://example.com',
       languageCode: 'en-us',
       title: seoData?.site_title || projectData.businessName,
-      theme: options.hugoTheme,
+      // Only include theme if it's not the default Hugo theme
+      ...(options.hugoTheme !== 'default-hugo' && { theme: options.hugoTheme }),
       
       params: {
         description: seoData?.site_description || projectData.description || `${projectData.businessName} - Professional services`,

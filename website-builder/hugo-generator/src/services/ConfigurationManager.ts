@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { FileManager } from '../utils/FileManager';
+import { getThemeConfiguration, ThemeConfigMapping } from '../config/themeConfigs';
 // Import shared theme constants
 import fs from 'fs';
 const sharedThemesPath = path.resolve(process.cwd(), '../../shared/constants/themes.js');
@@ -43,9 +44,9 @@ export class ConfigurationManager {
       // Build configuration object
       const config = await this.buildConfiguration(wizardData, themeConfig, seoData, structure);
       
-      // Generate config file (using YAML format)
-      const configContent = yaml.dump(config);
-      const configPath = path.join(siteDir, 'hugo.yaml');
+      // Generate config file (using TOML format)
+      const configContent = this.generateTomlConfig(config);
+      const configPath = path.join(siteDir, 'hugo.toml');
       
       await this.fileManager.writeFile(configPath, configContent);
       
@@ -77,6 +78,12 @@ export class ConfigurationManager {
     const businessInfo = wizardData.businessInfo || {};
     const locationInfo = wizardData.locationInfo || {};
     const websiteType = wizardData.websiteType?.category || 'business';
+    
+    console.log('🎨 Building configuration with enhanced theme config:', {
+      themeId: themeConfig.id,
+      hasParameterMapping: !!(themeConfig.parameterMapping && Object.keys(themeConfig.parameterMapping).length > 0),
+      hasFeatures: !!(themeConfig.features && themeConfig.features.length > 0)
+    });
     
     // Base configuration
     const config: any = {
@@ -160,6 +167,9 @@ export class ConfigurationManager {
     const locationInfo = wizardData.locationInfo || {};
     const businessCategory = wizardData.businessCategory?.industry?.toLowerCase() || 'business';
     
+    // Get theme configuration for parameter mapping
+    const themeConfigMapping = getThemeConfiguration(themeConfig.id || themeConfig.name || 'ananke');
+    
     // Get color scheme from shared constants if possible
     let colorScheme = themeConfig.colorScheme || {
       primary: '#3B82F6',
@@ -197,7 +207,8 @@ export class ConfigurationManager {
         text: '#1F2937'
       };
     }
-    
+
+    // Base parameters
     const params: any = {
       // Basic site info
       author: businessInfo.name || 'Website Owner',
@@ -232,6 +243,19 @@ export class ConfigurationManager {
       // Search
       enableSearch: true
     };
+
+    // Apply theme-specific parameter mapping
+    // Priority: 1. Enhanced parameter mapping from backend, 2. Local theme config mapping
+    if (themeConfig.parameterMapping && Object.keys(themeConfig.parameterMapping).length > 0) {
+      console.log('🎯 Using enhanced parameter mapping from backend');
+      Object.assign(params, themeConfig.parameterMapping);
+    } else if (themeConfigMapping) {
+      console.log('🔄 Using local theme configuration mapping');
+      const themeMappedParams = this.applyThemeParameterMapping(wizardData, themeConfigMapping);
+      Object.assign(params, themeMappedParams);
+    }
+    
+    console.log('📊 Final theme parameters applied:', Object.keys(params));
     
     return params;
   }
@@ -536,6 +560,49 @@ button:hover, .btn:hover {
 `;
   }
   
+  /**
+   * Apply theme-specific parameter mapping from wizard data
+   */
+  private applyThemeParameterMapping(wizardData: any, themeConfigMapping: ThemeConfigMapping): any {
+    const mappedParams: any = {};
+    
+    // Apply parameter mappings
+    for (const [wizardPath, themeParam] of Object.entries(themeConfigMapping.parameterMapping)) {
+      try {
+        const value = this.getValueFromPath(wizardData, wizardPath);
+        
+        if (value !== undefined && value !== null && value !== '') {
+          if (typeof themeParam === 'string') {
+            // Direct mapping
+            mappedParams[themeParam] = value;
+          } else if (typeof themeParam === 'function') {
+            // Transform function
+            const transformedValue = themeParam(wizardData);
+            if (transformedValue && typeof transformedValue === 'object') {
+              // Merge object results
+              Object.assign(mappedParams, transformedValue);
+            } else {
+              console.warn(`Transform function for ${wizardPath} returned non-object value:`, transformedValue);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Error mapping wizard path '${wizardPath}':`, error);
+      }
+    }
+    
+    return mappedParams;
+  }
+  
+  /**
+   * Get nested value from object using dot notation path
+   */
+  private getValueFromPath(obj: any, path: string): any {
+    return path.split('.').reduce((current, key) => {
+      return current && current[key] !== undefined ? current[key] : undefined;
+    }, obj);
+  }
+  
   private formatAddress(locationInfo: any): string {
     if (!locationInfo) return '';
     
@@ -547,5 +614,79 @@ button:hover, .btn:hover {
     ].filter(Boolean);
     
     return parts.join(', ');
+  }
+
+  /**
+   * Generate TOML format configuration
+   */
+  private generateTomlConfig(config: any): string {
+    let tomlContent = '';
+    
+    // Basic configuration
+    tomlContent += `baseURL = "${config.baseURL || 'https://example.com'}"\n`;
+    tomlContent += `languageCode = "${config.languageCode || 'en-us'}"\n`;
+    tomlContent += `title = "${config.title || 'My Website'}"\n`;
+    tomlContent += `theme = "${config.theme || 'ananke'}"\n`;
+    tomlContent += `defaultContentLanguage = "${config.defaultContentLanguage || 'en'}"\n`;
+    tomlContent += `enableRobotsTXT = ${config.enableRobotsTXT || true}\n`;
+    tomlContent += `canonifyURLs = ${config.canonifyURLs || true}\n\n`;
+    
+    // Parameters section
+    if (config.params) {
+      tomlContent += '[params]\n';
+      Object.entries(config.params).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          tomlContent += `  ${key} = "${value}"\n`;
+        } else if (typeof value === 'boolean') {
+          tomlContent += `  ${key} = ${value}\n`;
+        } else if (Array.isArray(value)) {
+          tomlContent += `  ${key} = [${value.map(v => `"${v}"`).join(', ')}]\n`;
+        } else if (typeof value === 'object' && value !== null) {
+          // Handle nested objects
+          Object.entries(value).forEach(([subKey, subValue]) => {
+            if (typeof subValue === 'string') {
+              tomlContent += `  ${key}_${subKey} = "${subValue}"\n`;
+            } else if (typeof subValue === 'boolean') {
+              tomlContent += `  ${key}_${subKey} = ${subValue}\n`;
+            }
+          });
+        }
+      });
+      tomlContent += '\n';
+    }
+    
+    // Menu configuration
+    if (config.menu && config.menu.main) {
+      config.menu.main.forEach((item: any, index: number) => {
+        tomlContent += `[[menu.main]]\n`;
+        tomlContent += `  name = "${item.name}"\n`;
+        tomlContent += `  url = "${item.url}"\n`;
+        tomlContent += `  weight = ${item.weight || index + 1}\n\n`;
+      });
+    }
+    
+    // Markup configuration
+    if (config.markup) {
+      tomlContent += '[markup]\n';
+      if (config.markup.goldmark) {
+        tomlContent += '  [markup.goldmark]\n';
+        if (config.markup.goldmark.renderer) {
+          tomlContent += '    [markup.goldmark.renderer]\n';
+          tomlContent += `      unsafe = ${config.markup.goldmark.renderer.unsafe || true}\n`;
+        }
+      }
+      tomlContent += '\n';
+    }
+    
+    // Minify configuration
+    if (config.minify) {
+      tomlContent += '[minify]\n';
+      Object.entries(config.minify).forEach(([key, value]) => {
+        tomlContent += `  ${key} = ${value}\n`;
+      });
+      tomlContent += '\n';
+    }
+    
+    return tomlContent;
   }
 }

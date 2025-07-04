@@ -41,7 +41,7 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
         errors.push('Please select a website type');
       }
       break;
-    
+
     case 2:
       // Only validate if business or ecommerce type
       if (data.websiteType?.id === 'business' || data.websiteType?.id === 'ecommerce') {
@@ -50,7 +50,7 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
         }
       }
       break;
-    
+
     case 3:
       if (data.websiteType?.id === 'business' || data.websiteType?.id === 'ecommerce') {
         if (!data.businessInfo?.name) {
@@ -66,15 +66,16 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
         }
       }
       break;
-    
+
     case 4:
       if (!data.websitePurpose?.primary) {
         errors.push('Please select a primary website purpose');
       }
       if (!data.websitePurpose?.goals || data.websitePurpose.goals.length === 0) {
         errors.push('Please select at least one goal');
-      }      break;
-    
+      } 
+      break;
+
     case 5:
       if (!data.businessDescription?.description) {
         errors.push('Business description is required');
@@ -83,40 +84,40 @@ const validateStepData = (step: number, data: WizardData): ValidationResult => {
         errors.push('Business description should be at least 50 characters');
       }
       break;
-    
+
     case 6:
-      const totalServices = (data.servicesSelection?.selectedServices?.length || 0) + 
-                           (data.servicesSelection?.customServices?.length || 0);
+      const totalServices = (data.servicesSelection?.selectedServices?.length || 0) +
+        (data.servicesSelection?.customServices?.length || 0);
       if (totalServices === 0) {
         errors.push('Please select or add at least one service');
       }
       break;
-    
+
     case 7:
       if (!data.locationInfo?.isOnlineOnly) {
-        if (!data.locationInfo?.city) {
+        if (!data.locationInfo?.address?.city) {
           errors.push('City is required for physical locations');
         }
-        if (!data.locationInfo?.state) {
+        if (!data.locationInfo?.address?.state) {
           errors.push('State/Province is required for physical locations');
         }
       }
       break;
-    
+
     case 8:
       if (!data.websiteStructure?.type) {
         errors.push('Please select a website structure type');
       }
       // Removed validation for selectedSections/selectedPages since Hugo themes handle this
       break;
-      case 9:
+    case 9:
       // UPDATED: Remove theme selection validation since we use auto-detection
       // Only validate that colors are configured
       if (!data.themeConfig?.colorScheme?.primary) {
         errors.push('Please select a primary color');
       }
       break;
-    
+
     case 10:
       // Final step - all previous validations should pass
       break;
@@ -150,7 +151,7 @@ export const useWizardStore = create<WizardStore>()(
       nextStep: () => {
         const store = get();
         const nextStep = Math.min(store.currentStep + 1, 10);
-        
+
         // Validate current step before moving
         if (store.validateStep(store.currentStep)) {
           store.completeStep(store.currentStep);
@@ -171,7 +172,7 @@ export const useWizardStore = create<WizardStore>()(
         set((state) => {
           (state.data as any)[step] = value;
         });
-        
+
         // Auto-save to storage
         setTimeout(() => {
           get().saveToStorage();
@@ -184,7 +185,7 @@ export const useWizardStore = create<WizardStore>()(
             (state.data as any)[key] = (data as any)[key];
           });
         });
-        
+
         // Validate the updated step
         const validation = validateStepData(step, get().data);
         set((state) => {
@@ -194,7 +195,7 @@ export const useWizardStore = create<WizardStore>()(
             errors: validation.errors,
           };
         });
-        
+
         // Auto-save to storage
         setTimeout(() => {
           get().saveToStorage();
@@ -205,7 +206,7 @@ export const useWizardStore = create<WizardStore>()(
       validateStep: (step: number) => {
         const store = get();
         const validation = validateStepData(step, store.data);
-        
+
         set((state) => {
           state.stepCompletion[step] = {
             ...state.stepCompletion[step],
@@ -213,9 +214,9 @@ export const useWizardStore = create<WizardStore>()(
             errors: validation.errors,
           };
         });
-        
+
         return validation.isValid;
-      },      completeStep: (step: number) => {
+      }, completeStep: (step: number) => {
         set((state) => {
           state.stepCompletion[step] = {
             ...state.stepCompletion[step],
@@ -241,7 +242,7 @@ export const useWizardStore = create<WizardStore>()(
       loadFromStorage: () => {
         // This is handled automatically by the persist middleware
         // but can be used for manual loads or data migration
-      },      clearData: () => {
+      }, clearData: () => {
         set((state) => {
           state.data = initialWizardData;
           state.stepCompletion = initialStepCompletion;
@@ -261,18 +262,18 @@ export const useWizardStore = create<WizardStore>()(
 
       canNavigateToStep: (step: number) => {
         const store = get();
-        
+
         // Can always go to step 1
         if (step === 1) return true;
-        
+
         // Can go to next step if current step is completed
         if (step === store.currentStep + 1) {
           return store.stepCompletion[store.currentStep]?.isCompleted || false;
         }
-        
+
         // Can go to any previous step
         if (step < store.currentStep) return true;
-        
+
         // Can go to any completed step
         return store.stepCompletion[step]?.isCompleted || false;
       },
@@ -284,7 +285,7 @@ export const useWizardStore = create<WizardStore>()(
     })),
     {
       name: 'wizard-storage',
-      storage: createJSONStorage(() => localStorage),      partialize: (state) => ({
+      storage: createJSONStorage(() => localStorage), partialize: (state) => ({
         data: state.data,
         stepCompletion: state.stepCompletion,
         currentStep: state.currentStep,

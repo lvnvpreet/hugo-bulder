@@ -1,0 +1,65 @@
+# ==============================================
+# Scripts - .gitignore
+# ==============================================
+
+# ==============================================
+# Test Files and Results
+# ==============================================
+# Test files
+test-*.sh
+test-*.ps1
+test-*.js
+test-*.ts
+test-*.py
+test_*.sh
+test_*.ps1
+test_*.js
+test_*.ts
+test_*.py
+*.test.sh
+*.test.ps1
+*.test.js
+*.test.ts
+*.test.py
+*.spec.sh
+*.spec.ps1
+*.spec.js
+*.spec.ts
+*.spec.py
+__tests__/
+tests/
+test/
+testing/
+
+# Test results and outputs
+test-results/
+test-output/
+test-*-output/
+test-*-results/
+
+# Test directories and temp files
+temp/
+tmp/
+temp-*/
+tmp-*/
+*-temp/
+*-tmp/
+
+# ==============================================
+# Script specific
+# ==============================================
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Environment-specific configs
+*.local.sh
+*.local.ps1
+config.local.*
+
+# ==============================================
+# Logs
+# ==============================================
+*.log
+logs/

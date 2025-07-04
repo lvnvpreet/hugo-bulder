@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import axios from 'axios';
 import { FileManager } from '../utils/FileManager';
+import { LocalThemeInstaller } from './LocalThemeInstaller';
 // Import shared theme constants
 import fs from 'fs';
 const sharedThemesPath = path.resolve(process.cwd(), '../../shared/constants/themes.js');
@@ -15,14 +16,80 @@ export class ThemeInstaller {
   private execAsync = promisify(exec);
   private tempDir: string;
   private fileManager: FileManager;
+  private localThemeInstaller: LocalThemeInstaller;
   
   constructor() {
     this.fileManager = new FileManager();
     this.tempDir = path.join(process.cwd(), 'temp', 'themes');
+    this.localThemeInstaller = new LocalThemeInstaller();
   }
-  
-  // Theme installation from GitHub
+
+  // Enhanced theme installation with local theme support
   async installTheme(
+    siteDir: string, 
+    themeConfig: {
+      id: string;
+      githubUrl?: string;
+      name: string;
+      isLocal?: boolean;
+    }
+  ): Promise<{
+    success: boolean;
+    themePath: string;
+    error?: string;
+  }> {
+    try {
+      console.log(`🎨 Installing theme: ${themeConfig.name} (${themeConfig.id})`);
+      
+      // Check if theme is available locally first
+      const isLocalAvailable = await this.localThemeInstaller.isThemeAvailableLocally(themeConfig.id);
+      
+      // Force local installation for health-wellness-theme
+      if (themeConfig.id === 'health-wellness-theme') {
+        console.log(`🏥 Forcing local installation for health-wellness-theme`);
+        if (isLocalAvailable) {
+          return await this.localThemeInstaller.installLocalTheme(siteDir, themeConfig.id);
+        } else {
+          return {
+            success: false,
+            themePath: '',
+            error: `Local health-wellness-theme not found. Please ensure it exists in themes/health-wellness-theme/`
+          };
+        }
+      }
+      
+      if (isLocalAvailable || themeConfig.isLocal) {
+        console.log(`📁 Using local theme: ${themeConfig.id}`);
+        return await this.localThemeInstaller.installLocalTheme(siteDir, themeConfig.id);
+      }
+      
+      // Fall back to GitHub installation
+      if (!themeConfig.githubUrl) {
+        return {
+          success: false,
+          themePath: '',
+          error: `No GitHub URL provided for theme: ${themeConfig.id}`
+        };
+      }
+      
+      console.log(`🌐 Using GitHub theme: ${themeConfig.githubUrl}`);
+      return await this.installGitHubTheme(siteDir, {
+        id: themeConfig.id,
+        githubUrl: themeConfig.githubUrl,
+        name: themeConfig.name
+      });
+      
+    } catch (error: any) {
+      return {
+        success: false,
+        themePath: '',
+        error: error.message
+      };
+    }
+  }
+
+  // Original GitHub theme installation (renamed for clarity)
+  private async installGitHubTheme(
     siteDir: string, 
     themeConfig: {
       id: string;
@@ -50,6 +117,7 @@ export class ThemeInstaller {
       
       // Verify theme installation
       const isValid = await this.validateThemeInstallation(themePath);
+      
       if (!isValid) {
         throw new Error('Theme validation failed after installation');
       }
@@ -69,7 +137,7 @@ export class ThemeInstaller {
       };
     }
   }
-  
+
   private async cloneThemeFromGit(githubUrl: string, themePath: string): Promise<void> {
     try {
       // Clone with depth 1 for faster download
@@ -244,5 +312,88 @@ export class ThemeInstaller {
         suitableFor: ['developer', 'tech', 'personal']
       }
     ];
+  }
+
+  // Get available themes (both local and remote)
+  async getAvailableThemes(): Promise<Array<{
+    id: string;
+    name: string;
+    displayName: string;
+    githubUrl?: string;
+    category: string;
+    suitableFor: string[];
+    isLocal: boolean;
+    source: 'local' | 'github' | 'shared';
+  }>> {
+    const themes: Array<{
+      id: string;
+      name: string;
+      displayName: string;
+      githubUrl?: string;
+      category: string;
+      suitableFor: string[];
+      isLocal: boolean;
+      source: 'local' | 'github' | 'shared';
+    }> = [];
+    
+    // Get local themes first (higher priority)
+    try {
+      const localThemes = await this.localThemeInstaller.getAvailableLocalThemes();
+      
+      localThemes.forEach(theme => {
+        const categories = this.parseThemeCategories(theme.metadata?.tags);
+        themes.push({
+          id: theme.id,
+          name: theme.name,
+          displayName: theme.metadata?.description || theme.name,
+          category: categories[0] || 'business',
+          suitableFor: categories,
+          isLocal: true,
+          source: 'local'
+        });
+      });
+      
+      console.log(`📁 Found ${localThemes.length} local themes`);
+    } catch (error: any) {
+      console.warn(`Could not load local themes: ${error.message}`);
+    }
+    
+    // Get shared themes
+    try {
+      const sharedThemes = this.getPopularThemes();
+      
+      sharedThemes.forEach(theme => {
+        // Don't duplicate themes that are available locally
+        if (!themes.find(t => t.id === theme.id)) {
+          themes.push({
+            ...theme,
+            isLocal: false,
+            source: 'shared'
+          });
+        }
+      });
+      
+      console.log(`🌐 Found ${sharedThemes.length} shared themes`);
+    } catch (error: any) {
+      console.warn(`Could not load shared themes: ${error.message}`);
+    }
+    
+    console.log(`🎯 Total available themes: ${themes.length}`);
+    return themes;
+  }
+
+  // Helper to parse theme categories from tags
+  private parseThemeCategories(tags: string | string[]): string[] {
+    if (!tags) return ['business'];
+    
+    if (typeof tags === 'string') {
+      return tags.split(',').map(tag => tag.trim().toLowerCase());
+    }
+    
+    if (Array.isArray(tags)) {
+      return tags.map(tag => tag.toLowerCase());
+    }
+    
+    return ['business'];
   }
 }

@@ -1,0 +1,129 @@
+# ==============================================
+# AI Engine Service - .gitignore
+# ==============================================
+
+# ==============================================
+# Environment Variables
+# ==============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+.envrc
+
+# ==============================================
+# Python
+# ==============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+htmlcov/
+
+# ==============================================
+# Virtual Environment
+# ==============================================
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env/
+
+# ==============================================
+# Test Files and Results
+# ==============================================
+# Test files
+test-*.py
+test_*.py
+*_test.py
+*-test.py
+*.test.py
+*.spec.py
+__tests__/
+tests/
+test/
+testing/
+
+# Test results and outputs
+test-results/
+test-output/
+test-*-output/
+test-*-results/
+coverage/
+junit.xml
+*.test-report.xml
+*.test-report.json
+.nyc_output/
+playwright-report/
+.pytest_cache/
+htmlcov/
+*.cover
+*.py,cover
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+
+# Test directories and temp files
+temp/
+tmp/
+temp-*/
+tmp-*/
+*-temp/
+*-tmp/
+
+# ==============================================
+# AI & ML Models
+# ==============================================
+*.model
+*.pkl
+*.joblib
+models/
+checkpoints/
+weights/
+cache/
+.vector_cache/
+embeddings/
+
+# ==============================================
+# Logs
+# ==============================================
+*.log
+logs/

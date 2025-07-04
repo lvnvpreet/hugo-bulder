@@ -16,6 +16,7 @@ import structlog
 from ..services.ollama_client import OllamaClient
 from ..services.model_manager import ModelManager
 from ..services.service_communication import ServiceCommunication
+from ..services.healthcare_content_service import HealthcareContentService
 from ..config import settings, MODEL_PRESETS
 
 logger = structlog.get_logger()
@@ -114,6 +115,15 @@ async def get_model_manager() -> ModelManager:
 async def get_service_communication() -> ServiceCommunication:
     from main import app
     return app.state.service_communication
+
+# Healthcare Content Generation Endpoints
+
+async def get_healthcare_service() -> HealthcareContentService:
+    """Dependency to get healthcare content service"""
+    from main import app
+    ollama_client = app.state.ollama_client
+    model_manager = app.state.model_manager
+    return HealthcareContentService(ollama_client, model_manager)
 
 @router.post("/content/generate-content", response_model=ContentGenerationResponse)
 async def generate_content(
@@ -787,3 +797,220 @@ def parse_generated_content(page_name: str, content: str, request: ContentGenera
         seo_title=seo_title,
         slug=slug
     )
+
+# Healthcare-specific request models
+class HealthcareContentRequest(BaseModel):
+    """Request model for healthcare content generation"""
+    business_name: str = Field(..., description="Healthcare practice name", min_length=1, max_length=100)
+    subcategory: str = Field(..., description="Healthcare subcategory (dental, medical, veterinary, etc.)", min_length=1, max_length=50)
+    content_type: str = Field(..., description="Content type (homepage, about, service_page, contact)", min_length=1, max_length=50)
+    business_data: Dict[str, Any] = Field(default={}, description="Additional business information")
+    model: Optional[str] = Field(default="llama3.2:3b", description="AI model to use")
+    
+    @validator('subcategory')
+    def validate_subcategory(cls, v):
+        allowed_subcategories = ["dental", "medical", "veterinary", "mental_health", "optometry", "dermatology", "chiropractic"]
+        if v not in allowed_subcategories:
+            raise ValueError(f"Invalid healthcare subcategory: {v}. Allowed: {allowed_subcategories}")
+        return v
+    
+    @validator('content_type')
+    def validate_content_type(cls, v):
+        allowed_types = ["homepage", "about", "service_page", "contact"]
+        if v not in allowed_types:
+            raise ValueError(f"Invalid content type: {v}. Allowed: {allowed_types}")
+        return v
+
+class HealthcareServiceRequest(BaseModel):
+    """Request model for healthcare service page generation"""
+    business_name: str = Field(..., description="Healthcare practice name", min_length=1, max_length=100)
+    subcategory: str = Field(..., description="Healthcare subcategory", min_length=1, max_length=50)
+    service_name: str = Field(..., description="Service name", min_length=1, max_length=100)
+    service_data: Dict[str, Any] = Field(default={}, description="Service-specific information")
+    model: Optional[str] = Field(default="llama3.2:3b", description="AI model to use")
+
+class HealthcareContentResponse(BaseModel):
+    """Response model for healthcare content generation"""
+    content: str = Field(..., description="Generated content")
+    metadata: Dict[str, Any] = Field(..., description="Content metadata")
+    subcategory: str = Field(..., description="Healthcare subcategory")
+    content_type: str = Field(..., description="Content type")
+    generated_at: str = Field(..., description="Generation timestamp")
+    model_used: str = Field(..., description="AI model used")
+
+@router.post("/content/healthcare/generate", response_model=HealthcareContentResponse)
+async def generate_healthcare_content(
+    request: HealthcareContentRequest,
+    healthcare_service: HealthcareContentService = Depends(get_healthcare_service)
+):
+    """
+    Generate healthcare content using specialized prompts from prompts.py
+    """
+    
+    logger.info("🏥 Healthcare content generation requested", 
+               business_name=request.business_name, 
+               subcategory=request.subcategory, 
+               content_type=request.content_type)
+    
+    try:
+        # Generate healthcare content using specialized service
+        result = await healthcare_service.generate_healthcare_content(
+            business_name=request.business_name,
+            subcategory=request.subcategory,
+            content_type=request.content_type,
+            business_data=request.business_data,
+            model_name=request.model
+        )
+        
+        logger.info("✅ Healthcare content generated successfully", 
+                   business_name=request.business_name,
+                   content_length=len(result["content"]))
+        
+        return HealthcareContentResponse(**result)
+        
+    except Exception as e:
+        logger.error("❌ Healthcare content generation failed", 
+                    business_name=request.business_name, 
+                    error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Healthcare content generation failed: {str(e)}"
+        )
+
+@router.post("/content/healthcare/service-page")
+async def generate_healthcare_service_page(
+    request: HealthcareServiceRequest,
+    healthcare_service: HealthcareContentService = Depends(get_healthcare_service)
+):
+    """
+    Generate a service page for a healthcare practice
+    """
+    
+    logger.info("🏥 Healthcare service page generation requested", 
+               business_name=request.business_name, 
+               subcategory=request.subcategory,
+               service_name=request.service_name)
+    
+    try:
+        # Generate service page using specialized service
+        result = await healthcare_service.generate_service_page(
+            business_name=request.business_name,
+            subcategory=request.subcategory,
+            service_name=request.service_name,
+            service_data=request.service_data,
+            model_name=request.model
+        )
+        
+        logger.info("✅ Healthcare service page generated successfully", 
+                   service_name=request.service_name,
+                   content_length=len(result["content"]))
+        
+        return result
+        
+    except Exception as e:
+        logger.error("❌ Healthcare service page generation failed", 
+                    service_name=request.service_name, 
+                    error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Healthcare service page generation failed: {str(e)}"
+        )
+
+@router.get("/content/healthcare/subcategories")
+async def get_supported_healthcare_subcategories(
+    healthcare_service: HealthcareContentService = Depends(get_healthcare_service)
+):
+    """
+    Get list of supported healthcare subcategories
+    """
+    
+    try:
+        subcategories = healthcare_service.get_supported_subcategories()
+        
+        return {
+            "subcategories": subcategories,
+            "count": len(subcategories),
+            "description": "Supported healthcare subcategories for Universal Healthcare Theme"
+        }
+        
+    except Exception as e:
+        logger.error("❌ Failed to get healthcare subcategories", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get healthcare subcategories: {str(e)}"
+        )
+
+@router.post("/content/healthcare/complete-site")
+async def generate_complete_healthcare_site(
+    business_name: str,
+    subcategory: str,
+    business_data: Dict[str, Any],
+    services: List[Dict[str, Any]],
+    model: str = "llama3.2:3b",
+    healthcare_service: HealthcareContentService = Depends(get_healthcare_service)
+):
+    """
+    Generate complete healthcare website (homepage, about, contact, service pages)
+    """
+    
+    logger.info("🏥 Complete healthcare site generation requested", 
+               business_name=business_name, 
+               subcategory=subcategory,
+               services_count=len(services))
+    
+    try:
+        site_content = {}
+        
+        # Generate homepage
+        homepage = await healthcare_service.generate_homepage(
+            business_name, subcategory, business_data, model
+        )
+        site_content["homepage"] = homepage
+        
+        # Generate about page
+        about = await healthcare_service.generate_about_page(
+            business_name, subcategory, business_data, model
+        )
+        site_content["about"] = about
+        
+        # Generate contact page
+        contact = await healthcare_service.generate_contact_page(
+            business_name, subcategory, business_data, model
+        )
+        site_content["contact"] = contact
+        
+        # Generate service pages
+        service_pages = []
+        for service in services:
+            service_page = await healthcare_service.generate_service_page(
+                business_name=business_name,
+                subcategory=subcategory,
+                service_name=service["name"],
+                service_data=service,
+                model_name=model
+            )
+            service_pages.append(service_page)
+        
+        site_content["services"] = service_pages
+        
+        logger.info("✅ Complete healthcare site generated successfully", 
+                   business_name=business_name,
+                   pages_count=3 + len(service_pages))
+        
+        return {
+            "business_name": business_name,
+            "subcategory": subcategory,
+            "site_content": site_content,
+            "pages_generated": 3 + len(service_pages),
+            "generated_at": datetime.now().isoformat(),
+            "model_used": model
+        }
+        
+    except Exception as e:
+        logger.error("❌ Complete healthcare site generation failed", 
+                    business_name=business_name, 
+                    error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Complete healthcare site generation failed: {str(e)}"
+        )

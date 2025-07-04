@@ -84,9 +84,9 @@ export class HugoSiteBuilder {
         throw new Error('Configuration generation failed');
       }
       buildLog.push('Site configuration generated');
-        // Step 4: Generate content files
-      buildLog.push('Step 4: Generating content files...');
-      const contentResult = await this.generateContent(
+      // Step 4: Generate content files using structured approach
+      buildLog.push('Step 4: Generating content files with structured approach...');
+      const contentResult = await this.generateContentStructured(
         siteDir,
         request.generatedContent,
         request.projectData,
@@ -98,6 +98,17 @@ export class HugoSiteBuilder {
         throw new Error('Content generation failed');
       }
       buildLog.push(`Generated ${contentResult.createdFiles.length} content files`);
+      
+      // Log page structure plan details
+      if (contentResult.pageStructurePlan) {
+        const plan = contentResult.pageStructurePlan;
+        buildLog.push(`Page structure: ${plan.config.name}`);
+        buildLog.push(`  Static pages: ${plan.staticPages.length}`);
+        buildLog.push(`  Service pages: ${plan.servicePages.length}`);
+        buildLog.push(`  Blog pages: ${plan.blogPages.length}`);
+        buildLog.push(`  Total pages: ${plan.totalPages}`);
+        buildLog.push(`  Estimated size: ${plan.estimatedContentSize} KB`);
+      }
         // Log content tracking details
       if (contentResult.contentTracking) {
         buildLog.push('Content tracking details:');
@@ -307,6 +318,61 @@ export class HugoSiteBuilder {
       return result;
     } catch (error: any) {
       console.error(`[CONTENT TRACKING] Content generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+    /**
+   * Generate content using structured page configuration approach
+   */
+  private async generateContentStructured(
+    siteDir: string,
+    generatedContent: any,
+    projectData: any,
+    seoData: any,
+    structure: any
+  ): Promise<any> {
+    console.log(`[STRUCTURED CONTENT] Starting structured content generation for site: ${siteDir}`);
+    console.log(`[STRUCTURED CONTENT] Generated content keys: ${Object.keys(generatedContent || {})}`);
+    
+    try {
+      // Use the new structured content generation method
+      const result = await this.contentGenerator.generateContentFilesStructured(
+        siteDir,
+        generatedContent,
+        projectData,
+        seoData,
+        structure
+      );
+      
+      // Additional validation and tracking
+      const contentDir = path.join(siteDir, 'content');
+      console.log(`[STRUCTURED CONTENT] Content directory: ${contentDir}`);
+      
+      if (await this.fileManager.exists(contentDir)) {
+        const contentFiles = await this.fileManager.readDir(contentDir);
+        console.log(`[STRUCTURED CONTENT] Content files created: ${contentFiles.length}`);
+        
+        // Log each content file with details
+        for (const file of contentFiles) {
+          const filePath = path.join(contentDir, file);
+          if (await this.fileManager.exists(filePath)) {
+            const stats = await this.fileManager.getStats(filePath);
+            console.log(`[STRUCTURED CONTENT] File: ${file} - Size: ${stats.size} bytes`);
+          }
+        }
+      } else {
+        console.warn(`[STRUCTURED CONTENT] WARNING: Content directory not found: ${contentDir}`);
+      }
+      
+      console.log(`[STRUCTURED CONTENT] Generation completed successfully`);
+      if (result.pageStructurePlan) {
+        console.log(`[STRUCTURED CONTENT] Used page structure: ${result.pageStructurePlan.config.name}`);
+      }
+      
+      return result;
+    } catch (error: any) {
+      console.error(`[STRUCTURED CONTENT] Structured content generation failed: ${error.message}`);
+      console.error(`[STRUCTURED CONTENT] Error details:`, error);
       throw error;
     }
   }

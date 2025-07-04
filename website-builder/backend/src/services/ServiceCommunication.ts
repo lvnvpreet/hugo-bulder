@@ -6,8 +6,8 @@ export class ServiceCommunication {
   private httpClient: AxiosInstance;
   
   constructor() {
-    this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://ai-engine:3002';
-    this.hugoGeneratorUrl = process.env.HUGO_GENERATOR_URL || 'http://hugo-generator:3003';
+    this.aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:3002';
+    this.hugoGeneratorUrl = process.env.HUGO_GENERATOR_URL || 'http://localhost:3003';
       this.httpClient = axios.create({
       timeout: 1200000, // 20 minutes timeout for AI operations (increased from 5 minutes)
       headers: {
