@@ -1,1 +1,85 @@
 /Project-insturections
+
+# ==============================================
+# Test Files and Results
+# ==============================================
+# Test files
+test-*.js
+test-*.ts
+test-*.py
+test_*.py
+test_*.js
+test_*.ts
+*.test.js
+*.test.ts
+*.test.py
+*.spec.js
+*.spec.ts
+*.spec.py
+__tests__/
+tests/
+test/
+testing/
+
+# Test results and outputs
+test-results/
+test-output/
+test-frontmatter-output/
+test-hugo-sites/
+test-*-output/
+test-*-results/
+coverage/
+junit.xml
+*.test-report.xml
+*.test-report.json
+.nyc_output/
+playwright-report/
+.pytest_cache/
+htmlcov/
+*.cover
+*.py,cover
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+
+# Test directories and temp files
+temp/
+tmp/
+temp-*/
+tmp-*/
+*-temp/
+*-tmp/
+test-*/
+
+# ==============================================
+# Unwanted Documentation Files
+# ==============================================
+# Development reports and summaries
+*_SUCCESS_REPORT.md
+*_IMPLEMENTATION_SUMMARY.md
+*_INTEGRATION_REPORT.md
+*_MAPPING_REPORT.md
+*_FIX_SUMMARY.md
+*_REMOVAL_SUMMARY.md
+*_PLAN.md
+*_TODOS.md
+TASK_*_COMPLETION.md
+*_VERIFICATION.md
+BUG_FIXES.md
+
+# Placeholder README files
+static/*/README.md
+images/*/README.md
+fonts/*/README.md
+downloads/README.md
+
+# ==============================================
+# Development Scripts
+# ==============================================
+# Start scripts and development utilities
+start-*.ps1
+start-*.sh
+start-*.bat
+start-*.cmd
